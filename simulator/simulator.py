@@ -120,7 +120,7 @@ class Simulator:
 
         wait_times = [
             job.started_at - job.created_at
-            for job in completed
+            for job in jobs
             if job.started_at is not None
         ]
 

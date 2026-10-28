@@ -213,3 +213,53 @@ async def test_report_remains_available_after_worker_failure(monkeypatch):
     assert simulator.last_report["metrics"]["failed_jobs"] == 1
     assert simulator.last_report["metrics"]["completed_jobs"] == 0
     assert simulator.last_report["jobs"][0]["status"] == "failed"
+
+def test_metrics_include_failed_jobs_that_started():
+    simulator = Simulator(printer_count=1)
+    job = Job(
+        id="J-FAIL",
+        material="PLA",
+        est_time=10,
+        priority=1,
+    )
+    simulator.add_job(job)
+
+    job.status = JobStatus.FAILED
+    job.started_at = job.created_at + 5
+    job.finished_at = job.created_at + 8
+    simulator._simulation_elapsed = 10
+    simulator.printers[0].busy_time = 3
+
+    report = simulator.generate_report()
+    metrics = report["metrics"]
+    job_report = report["jobs"][0]
+
+    assert job_report["wait_time"] == 5
+    assert job_report["run_time"] == 3
+    assert metrics["average_wait_time_seconds"] == 5
+    assert metrics["median_wait_time_seconds"] == 5
+    assert metrics["throughput_jobs_per_second"] == 0
+    assert metrics["total_printer_occupancy_seconds"] == 3
+    assert metrics["failed_jobs"] == 1
+    assert metrics["completed_jobs"] == 0
+
+
+@pytest.mark.asyncio
+async def test_metrics_with_multiple_printers():
+    simulator = Simulator(printer_count=2, time_scale=0.01)
+
+    simulator.add_job(Job("J1", "PLA", 0.1, priority=1))
+    simulator.add_job(Job("J2", "ABS", 0.1, priority=2))
+    simulator.add_job(Job("J3", "PETG", 0.1, priority=3))
+    report = await simulator.run()
+
+    metrics = report["metrics"]
+    occupancy = metrics["printer_occupancy_seconds"]
+
+    assert metrics["completed_jobs"] == 3
+    assert metrics["failed_jobs"] == 0
+    assert metrics["total_printer_occupancy_seconds"] == pytest.approx(
+        sum(occupancy.values()), abs=0.00001
+    )
+    assert all(value > 0 for value in occupancy.values())
+    assert metrics["throughput_jobs_per_second"] > 0
