@@ -1,0 +1,30 @@
+
+{
+    "jobs": [
+      {
+        "id": "J001",
+        "material": "PLA",
+        "est_time": 30,
+        "priority": 2
+      },
+      {
+        "id": "J002",
+        "material": "ABS",
+        "est_time": 20,
+        "priority": 1
+      },
+      {
+        "id": "J003",
+        "material": "PETG",
+        "est_time": 15,
+        "priority": 1
+      },
+      {
+        "id": "J004",
+        "material": "PLA",
+        "est_time": 10,
+        "priority": 3
+      }
+    ]
+}
+  
