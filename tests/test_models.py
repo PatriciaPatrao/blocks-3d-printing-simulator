@@ -33,3 +33,23 @@ def test_printer_is_unavailable_when_running_a_job():
     printer = Printer(id="P1", current_job_id="J1")
 
     assert printer.is_available is False
+
+@pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
+def test_job_rejects_non_finite_estimated_time(value):
+    with pytest.raises(ValueError):
+        Job(id="J1", material="PLA", est_time=value)
+
+@pytest.mark.parametrize("value", ["invalid", True, float("nan"), float("inf"), -1])
+def test_printer_rejects_invalid_busy_time(value):
+    with pytest.raises(ValueError):
+        Printer(id="P1", busy_time=value)
+
+
+def test_job_rejects_non_string_id():
+    with pytest.raises(ValueError):
+        Job(id=None, material="PLA", est_time=10)
+
+
+def test_printer_rejects_invalid_current_job_id():
+    with pytest.raises(ValueError):
+        Printer(id="P1", current_job_id="")

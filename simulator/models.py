@@ -1,7 +1,8 @@
+import math
+import time
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-import time
 
 
 class JobStatus(StrEnum):
@@ -25,35 +26,29 @@ class Job:
     status: JobStatus = JobStatus.QUEUED
 
     def __post_init__(self) -> None:
-        if not self.id.strip():
-            raise ValueError("Job id cannot be empty.")
+        if not isinstance(self.id, str) or not self.id.strip():
+            raise ValueError("Job id must be a non-empty string.")
 
-        if not self.material.strip():
-            raise ValueError("Job material cannot be empty.")
+        if not isinstance(self.material, str) or not self.material.strip():
+            raise ValueError("Job material must be a non-empty string.")
 
-        if isinstance(self.est_time, bool) or not isinstance(
-            self.est_time, (int, float)
+        if (
+            isinstance(self.est_time, bool)
+            or not isinstance(self.est_time, (int, float))
+            or not math.isfinite(self.est_time)
+            or self.est_time <= 0
         ):
-            raise ValueError("Estimated time must be a number.")
-
-        if self.est_time <= 0 or self.est_time == float("inf"):
             raise ValueError("Estimated time must be positive and finite.")
 
-        if self.est_time != self.est_time:
-            raise ValueError("Estimated time cannot be NaN.")
-
-        if isinstance(self.priority, bool) or not isinstance(
-            self.priority, int
-        ):
+        if isinstance(self.priority, bool) or not isinstance(self.priority, int):
             raise ValueError("Priority must be an integer.")
 
-        if isinstance(self.created_at, bool) or not isinstance(
-            self.created_at, (int, float)
+        if (
+            isinstance(self.created_at, bool)
+            or not isinstance(self.created_at, (int, float))
+            or not math.isfinite(self.created_at)
         ):
-            raise ValueError("Created_at must be a timestamp.")
-
-        if not (float("-inf") < self.created_at < float("inf")):
-            raise ValueError("Created_at must be finite.")
+            raise ValueError("Created_at must be a finite timestamp.")
 
 
 @dataclass
@@ -63,14 +58,22 @@ class Printer:
     busy_time: float = 0.0
 
     def __post_init__(self) -> None:
-        if not self.id.strip():
-            raise ValueError("Printer id cannot be empty.")
+        if not isinstance(self.id, str) or not self.id.strip():
+            raise ValueError("Printer id must be a non-empty string.")
 
-        if self.busy_time < 0 or self.busy_time == float("inf"):
+        if (
+            isinstance(self.busy_time, bool)
+            or not isinstance(self.busy_time, (int, float))
+            or not math.isfinite(self.busy_time)
+            or self.busy_time < 0
+        ):
             raise ValueError("Busy time must be non-negative and finite.")
 
-        if self.busy_time != self.busy_time:
-            raise ValueError("Busy time cannot be NaN.")
+        if self.current_job_id is not None and (
+            not isinstance(self.current_job_id, str)
+            or not self.current_job_id.strip()
+        ):
+            raise ValueError("Current job ID must be a non-empty string or None.")
 
     @property
     def is_available(self) -> bool:
