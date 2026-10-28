@@ -18,6 +18,7 @@ class QueueManager:
         self._jobs: dict[str, Job] = {}
         self._sequence = 0
         self._lock = threading.Lock()
+        self._insertion_order: dict[str, int] = {}
 
     def enqueue(self, job: Job) -> None:
         """Add a job to the queue."""
@@ -34,6 +35,7 @@ class QueueManager:
             )
             self._jobs[job.id] = job
             self._sequence += 1
+            self._insertion_order[job.id] = self._sequence
 
     def cancel(self, job_id: str) -> bool:
         """Cancel a queued job. Return False if it cannot be cancelled."""
@@ -44,7 +46,7 @@ class QueueManager:
                 return False
 
             job.status = JobStatus.CANCELLED
-            job.finished_at = __import__("time").time()
+            job.finished_at = time.time()
             return True
 
     def get_next_job(self) -> Job | None:
@@ -81,7 +83,7 @@ class QueueManager:
         with self._lock:
             return sorted(
                 self._jobs.values(),
-                key=lambda job: job.created_at,
+                key=lambda job: self._insertion_order[job.id],
             )
 
     def queued_count(self) -> int:

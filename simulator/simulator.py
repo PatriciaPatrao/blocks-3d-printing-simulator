@@ -45,6 +45,8 @@ class Simulator:
         self.time_scale = float(time_scale)
         self._jobs: dict[str, Job] = {}
         self._simulation_elapsed = 0.0
+        self.last_report: dict | None = None
+        self._stop_claiming = False
 
     def add_job(self, job: Job) -> None:
         self.queue.enqueue(job)
@@ -56,8 +58,13 @@ class Simulator:
     def list_jobs(self) -> list[Job]:
         return list(self._jobs.values())
 
+
+
     async def _printer_worker(self, printer: Printer) -> None:
         while True:
+            if self._stop_claiming:
+                return
+
             job = self.queue.claim_next_job()
             if job is None:
                 return
@@ -67,22 +74,42 @@ class Simulator:
 
             try:
                 await asyncio.sleep(job.est_time * self.time_scale)
+            except Exception:
+                self._stop_claiming = True
+                job.status = JobStatus.FAILED
+                job.finished_at = time.time()
+                raise
+            else:
+                job.status = JobStatus.COMPLETED
+                job.finished_at = time.time()
             finally:
                 printer.busy_time += time.monotonic() - started
                 printer.current_job_id = None
 
-            job.finished_at = time.time()
-            job.status = JobStatus.COMPLETED
 
     async def run(self) -> dict:
+        self._stop_claiming = False
         started = time.monotonic()
 
-        await asyncio.gather(
-            *(self._printer_worker(printer) for printer in self.printers)
+        results = await asyncio.gather(
+            *(self._printer_worker(printer) for printer in self.printers),
+            return_exceptions=True,
         )
 
         self._simulation_elapsed = time.monotonic() - started
-        return self.generate_report()
+        self.last_report = self.generate_report()
+
+        errors = [
+            result for result in results
+            if isinstance(result, Exception)
+        ]
+
+        if errors:
+            raise errors[0]
+
+        return self.last_report
+
+
 
     def generate_report(self) -> dict:
         jobs = list(self._jobs.values())
@@ -152,5 +179,8 @@ class Simulator:
                     printer.id: round(printer.busy_time, 6)
                     for printer in self.printers
                 },
+                "failed_jobs": sum(
+                    job.status == JobStatus.FAILED for job in jobs
+                ),
             },
         }

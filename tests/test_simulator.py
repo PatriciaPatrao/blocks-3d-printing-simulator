@@ -1,3 +1,4 @@
+import asyncio
 
 import pytest
 
@@ -75,3 +76,140 @@ async def test_single_printer_respects_priority_and_fifo():
         "MEDIUM",
         "LOW",
     ]
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_does_not_leave_job_running(monkeypatch):
+    simulator = Simulator(printer_count=1, time_scale=0.01)
+    job = Job(
+        id="J-FAIL",
+        material="PLA",
+        est_time=1,
+        priority=1,
+    )
+    simulator.add_job(job)
+
+    async def failing_sleep(_delay):
+        raise RuntimeError("Simulated printer failure")
+
+    monkeypatch.setattr(asyncio, "sleep", failing_sleep)
+
+    with pytest.raises(RuntimeError, match="Simulated printer failure"):
+        await simulator.run()
+
+    assert job.status == JobStatus.FAILED
+    assert job.finished_at is not None
+    assert simulator.printers[0].current_job_id is None
+
+
+@pytest.mark.asyncio
+async def test_report_counts_failed_jobs(monkeypatch):
+    simulator = Simulator(printer_count=1, time_scale=0.01)
+    job = Job(
+        id="J-FAIL",
+        material="PLA",
+        est_time=1,
+        priority=1,
+    )
+    simulator.add_job(job)
+
+    async def failing_sleep(_delay):
+        raise RuntimeError("Simulated printer failure")
+
+    monkeypatch.setattr(asyncio, "sleep", failing_sleep)
+
+    with pytest.raises(RuntimeError):
+        await simulator.run()
+
+    report = simulator.generate_report()
+
+    assert report["metrics"]["failed_jobs"] == 1
+    assert report["metrics"]["completed_jobs"] == 0
+
+
+
+
+@pytest.mark.asyncio
+async def test_all_workers_finish_cleanup_when_one_worker_fails(monkeypatch):
+    simulator = Simulator(printer_count=2, time_scale=0.01)
+
+    failed_job = Job(
+        id="J-FAIL",
+        material="PLA",
+        est_time=1,
+        priority=1,
+    )
+    other_job = Job(
+        id="J-OK",
+        material="PETG",
+        est_time=1,
+        priority=2,
+    )
+    queued_job = Job(
+        id="J-QUEUED",
+        material="ABS",
+        est_time=1,
+        priority=3,
+    )
+
+    simulator.add_job(failed_job)
+    simulator.add_job(other_job)
+    simulator.add_job(queued_job)
+
+    original_sleep = asyncio.sleep
+    both_workers_started = asyncio.Event()
+    calls = 0
+
+    async def controlled_sleep(delay):
+        nonlocal calls
+        calls += 1
+        current_call = calls
+
+        if calls == 2:
+            both_workers_started.set()
+
+        await both_workers_started.wait()
+
+        if current_call == 1:
+            raise RuntimeError("Simulated printer failure")
+
+        await original_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", controlled_sleep)
+
+    with pytest.raises(RuntimeError, match="Simulated printer failure"):
+        await simulator.run()
+
+    assert failed_job.status == JobStatus.FAILED
+    assert failed_job.finished_at is not None
+
+    assert other_job.status == JobStatus.COMPLETED
+    assert other_job.finished_at is not None
+
+    assert queued_job.status == JobStatus.QUEUED
+    assert all(printer.current_job_id is None for printer in simulator.printers)
+
+
+@pytest.mark.asyncio
+async def test_report_remains_available_after_worker_failure(monkeypatch):
+    simulator = Simulator(printer_count=1, time_scale=0.01)
+    job = Job(
+        id="J-FAIL",
+        material="PLA",
+        est_time=1,
+        priority=1,
+    )
+    simulator.add_job(job)
+
+    async def failing_sleep(_delay):
+        raise RuntimeError("Simulated printer failure")
+
+    monkeypatch.setattr(asyncio, "sleep", failing_sleep)
+
+    with pytest.raises(RuntimeError, match="Simulated printer failure"):
+        await simulator.run()
+
+    assert simulator.last_report is not None
+    assert simulator.last_report["metrics"]["failed_jobs"] == 1
+    assert simulator.last_report["metrics"]["completed_jobs"] == 0
+    assert simulator.last_report["jobs"][0]["status"] == "failed"

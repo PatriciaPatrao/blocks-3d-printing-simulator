@@ -71,17 +71,33 @@ async def run_cli(args: argparse.Namespace) -> int:
         if not args.run:
             return 0
 
-    report = await simulator.run()
-    output = json.dumps(report, indent=2, ensure_ascii=False)
+    simulation_error = None
 
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output + "\n", encoding="utf-8")
-        print(f"Report written to {args.output}")
-    else:
-        print(output)
+    try:
+        report = await simulator.run()
+    except Exception as exc:
+        report = simulator.last_report
+        simulation_error = exc
+
+    if report is not None:
+        output = json.dumps(report, indent=2, ensure_ascii=False)
+
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output + "\n", encoding="utf-8")
+            print(f"Report written to {args.output}")
+        else:
+            print(output)
+
+    if simulation_error is not None:
+        print(
+            f"Error: Simulation failed: {simulation_error}",
+            file=sys.stderr,
+        )
+        return 1
 
     return 0
+
 
 
 def main() -> int:

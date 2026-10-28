@@ -1,6 +1,8 @@
-
+import asyncio
+from argparse import Namespace
 import json
 
+from simulator import cli
 from simulator.cli import load_jobs
 from simulator.models import Job
 from simulator.simulator import Simulator
@@ -45,3 +47,57 @@ def test_load_jobs_rejects_invalid_json_structure(tmp_path):
         assert "JSON list" in str(exc)
     else:
         raise AssertionError("Expected invalid input to be rejected")
+
+
+def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
+    input_path = tmp_path / "jobs.json"
+    input_path.write_text(
+        json.dumps([
+            {"id": "J1", "material": "PLA", "est_time": 1}
+        ]),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "report.json"
+
+    expected_report = {
+        "jobs": [{"id": "J1", "status": "failed"}],
+        "metrics": {"failed_jobs": 1},
+    }
+
+    class FailingSimulator:
+        def __init__(self, printer_count, time_scale):
+            self.last_report = expected_report
+
+        def add_job(self, job):
+            pass
+
+        def cancel_job(self, job_id):
+            return False
+
+        def list_jobs(self):
+            return []
+
+        async def run(self):
+            raise RuntimeError("Simulated printer failure")
+
+    monkeypatch.setattr(cli, "Simulator", FailingSimulator)
+
+    args = Namespace(
+        input=input_path,
+        printers=2,
+        time_scale=0.01,
+        output=output_path,
+        cancel=[],
+        list=False,
+        run=False,
+    )
+
+    exit_code = asyncio.run(cli.run_cli(args))
+
+    assert exit_code == 1
+    assert json.loads(output_path.read_text(encoding="utf-8")) == expected_report
+
+    captured = capsys.readouterr()
+    assert "Report written to" in captured.out
+    assert "Simulation failed: Simulated printer failure" in captured.err
