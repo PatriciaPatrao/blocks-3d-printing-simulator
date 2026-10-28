@@ -1,7 +1,7 @@
 
 # 3D Printing Queue Simulator
 
-A Python-based simulator for scheduling 3D printing jobs across multiple printers. It supports priority-based scheduling, FIFO ordering for equal priorities, queued-job cancellation, asynchronous execution and JSON reporting.
+A Python-based simulator for scheduling 3D printing jobs across multiple printers. It supports priority-based scheduling, FIFO ordering for equal priorities, queued-job cancellation, asynchronous execution and JSON and CSV reporting.
 
 ## Features
 
@@ -12,6 +12,7 @@ A Python-based simulator for scheduling 3D printing jobs across multiple printer
 - Thread-safe queue operations.
 - Cancellation of jobs that have not started.
 - JSON reports with job states, timestamps and execution metrics.
+- CSV reports with per-job states, timestamps, wait times and run times.
 - Configurable simulation time scale.
 - Automated tests using pytest and pytest-asyncio.
 
@@ -93,7 +94,7 @@ Options:
 - `--input`: input JSON path; defaults to `sample_jobs.json`.
 - `--printers`: number of printers; defaults to `2`.
 - `--time-scale`: multiplier applied to estimated job duration; defaults to `0.01`.
-- `--output`: output JSON path. If omitted, the report is printed to the terminal.
+- `--output`: report output path. Use `.json` for the full report with metrics or `.csv` for per-job data. If omitted, the JSON report is printed to the terminal.
 - `--list`: list loaded jobs before simulation.
 - `--run`: run the simulation after listing jobs.
 - `--cancel JOB_ID`: cancel a queued job before simulation. This option can be repeated.
@@ -118,7 +119,7 @@ Note: each CLI invocation loads a fresh set of jobs from the input file. Job sta
 
 The JSON report contains:
 
-- Per-job status: `queued`, `running`, `completed` or `cancelled`.
+- Per-job status: `queued`, `running`, `completed`, `cancelled` or `failed`.
 - UTC timestamps in ISO 8601 format.
 - `wait_time`: start time minus creation time, in seconds.
 - `run_time`: finish time minus start time, in seconds.
@@ -161,4 +162,4 @@ The time scale makes simulations faster or slower without changing the report's 
 - Job state is held in memory and is reset for each CLI invocation.
 - The CLI is not an interactive service.
 - Running-job cancellation and preemption are not implemented.
-- The simulator does not model printer-material compatibility or printer failures.
+- Printer failures are represented when a worker raises an exception. The affected job is marked as `failed`, the report is preserved, and the CLI exits with a non-zero status. Jobs not yet started remain queued.

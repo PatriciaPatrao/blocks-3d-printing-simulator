@@ -59,18 +59,25 @@ class Simulator:
         return list(self._jobs.values())
 
 
+    async def _printer_worker(
+        self,
+        printer: Printer,
+        initial_job: Job | None = None,
+    ) -> None:
+        job = initial_job
 
-    async def _printer_worker(self, printer: Printer) -> None:
         while True:
             if self._stop_claiming:
                 return
 
-            job = self.queue.claim_next_job()
+            if job is None:
+                job = self.queue.claim_next_job()
+
             if job is None:
                 return
 
             printer.current_job_id = job.id
-            started = time.monotonic()
+            job_started = time.monotonic()
 
             try:
                 await asyncio.sleep(job.est_time * self.time_scale)
@@ -83,16 +90,29 @@ class Simulator:
                 job.status = JobStatus.COMPLETED
                 job.finished_at = time.time()
             finally:
-                printer.busy_time += time.monotonic() - started
+                printer.busy_time += time.monotonic() - job_started
                 printer.current_job_id = None
 
+            job = None
 
     async def run(self) -> dict:
         self._stop_claiming = False
         started = time.monotonic()
 
+        # Assign one initial job to each printer before workers start.
+        initial_jobs = [
+            self.queue.claim_next_job()
+            for _ in self.printers
+        ]
+
         results = await asyncio.gather(
-            *(self._printer_worker(printer) for printer in self.printers),
+            *(
+                self._printer_worker(printer, initial_job)
+                for printer, initial_job in zip(
+                    self.printers,
+                    initial_jobs,
+                )
+            ),
             return_exceptions=True,
         )
 

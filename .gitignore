@@ -5,3 +5,5 @@ __pycache__/
 report.json
 report_cancel.json
 .env
+report.json
+report.csv

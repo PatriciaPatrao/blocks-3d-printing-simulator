@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import csv
 import sys
 from pathlib import Path
 
@@ -41,6 +42,40 @@ def load_jobs(input_path: Path) -> list[Job]:
             ) from exc
 
     return jobs
+
+
+def write_report(report: dict, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_path.suffix.lower() == ".csv":
+        fieldnames = [
+            "id",
+            "material",
+            "est_time",
+            "priority",
+            "status",
+            "created_at",
+            "started_at",
+            "finished_at",
+            "wait_time",
+            "run_time",
+        ]
+
+        with output_path.open(
+            "w", encoding="utf-8", newline=""
+        ) as csv_file:
+            writer = csv.DictWriter(
+                csv_file,
+                fieldnames=fieldnames,
+                extrasaction="ignore",
+            )
+            writer.writeheader()
+            writer.writerows(report.get("jobs", []))
+    else:
+        output_path.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
 
 async def run_cli(args: argparse.Namespace) -> int:
@@ -83,8 +118,7 @@ async def run_cli(args: argparse.Namespace) -> int:
         output = json.dumps(report, indent=2, ensure_ascii=False)
 
         if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(output + "\n", encoding="utf-8")
+            write_report(report, args.output)
             print(f"Report written to {args.output}")
         else:
             print(output)
@@ -118,7 +152,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output", type=Path,
-        help="Report output path; prints JSON to the terminal if omitted",
+        help="Report output path (.json or .csv); prints JSON to the terminal if omitted",
     )
     parser.add_argument(
         "--cancel", action="append", default=[], metavar="JOB_ID",

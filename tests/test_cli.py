@@ -101,3 +101,41 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "Report written to" in captured.out
     assert "Simulation failed: Simulated printer failure" in captured.err
+
+
+def test_write_report_as_csv(tmp_path):
+    import csv
+
+    from simulator.cli import write_report
+
+    output_path = tmp_path / "reports" / "report.csv"
+    report = {
+        "jobs": [
+            {
+                "id": "J1",
+                "material": "PLA",
+                "est_time": 10,
+                "priority": 1,
+                "status": "completed",
+                "created_at": "2026-10-28T10:00:00+00:00",
+                "started_at": "2026-10-28T10:00:01+00:00",
+                "finished_at": "2026-10-28T10:00:11+00:00",
+                "wait_time": 1.0,
+                "run_time": 10.0,
+            }
+        ],
+        "metrics": {"completed_jobs": 1},
+    }
+
+    write_report(report, output_path)
+
+    with output_path.open(
+        "r", encoding="utf-8", newline=""
+    ) as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == "J1"
+    assert rows[0]["status"] == "completed"
+    assert rows[0]["wait_time"] == "1.0"
+    assert rows[0]["run_time"] == "10.0"

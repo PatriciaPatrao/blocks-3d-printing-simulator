@@ -246,7 +246,7 @@ def test_metrics_include_failed_jobs_that_started():
 
 @pytest.mark.asyncio
 async def test_metrics_with_multiple_printers():
-    simulator = Simulator(printer_count=2, time_scale=0.01)
+    simulator = Simulator(printer_count=2, time_scale=0.5)
 
     simulator.add_job(Job("J1", "PLA", 0.1, priority=1))
     simulator.add_job(Job("J2", "ABS", 0.1, priority=2))
@@ -262,4 +262,5 @@ async def test_metrics_with_multiple_printers():
         sum(occupancy.values()), abs=0.00001
     )
     assert all(value > 0 for value in occupancy.values())
+    print("Printer occupancy:", occupancy)
     assert metrics["throughput_jobs_per_second"] > 0
