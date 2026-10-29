@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-29T09:36:26.476551+00:00",
-  "simulation_elapsed_seconds": 0.469,
+  "generated_at": "2026-10-29T11:28:51.154338+00:00",
+  "simulation_elapsed_seconds": 0.453,
   "jobs": [
     {
       "id": "J001",
@@ -8,11 +8,11 @@
       "est_time": 30,
       "priority": 2,
       "status": "completed",
-      "created_at": "2026-10-29T09:36:26.002592+00:00",
-      "started_at": "2026-10-29T09:36:26.166772+00:00",
-      "finished_at": "2026-10-29T09:36:26.476551+00:00",
-      "wait_time": 0.16418,
-      "run_time": 0.309779
+      "created_at": "2026-10-29T11:28:50.689337+00:00",
+      "started_at": "2026-10-29T11:28:50.840882+00:00",
+      "finished_at": "2026-10-29T11:28:51.154338+00:00",
+      "wait_time": 0.151545,
+      "run_time": 0.313456
     },
     {
       "id": "J002",
@@ -20,11 +20,11 @@
       "est_time": 20,
       "priority": 1,
       "status": "completed",
-      "created_at": "2026-10-29T09:36:26.002592+00:00",
-      "started_at": "2026-10-29T09:36:26.002592+00:00",
-      "finished_at": "2026-10-29T09:36:26.213890+00:00",
+      "created_at": "2026-10-29T11:28:50.689337+00:00",
+      "started_at": "2026-10-29T11:28:50.689337+00:00",
+      "finished_at": "2026-10-29T11:28:50.908124+00:00",
       "wait_time": 0.0,
-      "run_time": 0.211298
+      "run_time": 0.218787
     },
     {
       "id": "J003",
@@ -32,11 +32,11 @@
       "est_time": 15,
       "priority": 1,
       "status": "completed",
-      "created_at": "2026-10-29T09:36:26.002592+00:00",
-      "started_at": "2026-10-29T09:36:26.002592+00:00",
-      "finished_at": "2026-10-29T09:36:26.166772+00:00",
+      "created_at": "2026-10-29T11:28:50.689337+00:00",
+      "started_at": "2026-10-29T11:28:50.689337+00:00",
+      "finished_at": "2026-10-29T11:28:50.840882+00:00",
       "wait_time": 0.0,
-      "run_time": 0.16418
+      "run_time": 0.151545
     },
     {
       "id": "J004",
@@ -44,11 +44,11 @@
       "est_time": 10,
       "priority": 3,
       "status": "completed",
-      "created_at": "2026-10-29T09:36:26.002592+00:00",
-      "started_at": "2026-10-29T09:36:26.213890+00:00",
-      "finished_at": "2026-10-29T09:36:26.322513+00:00",
-      "wait_time": 0.211298,
-      "run_time": 0.108623
+      "created_at": "2026-10-29T11:28:50.689337+00:00",
+      "started_at": "2026-10-29T11:28:50.908124+00:00",
+      "finished_at": "2026-10-29T11:28:51.028221+00:00",
+      "wait_time": 0.218787,
+      "run_time": 0.120097
     }
   ],
   "metrics": {
@@ -56,14 +56,14 @@
     "completed_jobs": 4,
     "queued_jobs": 0,
     "cancelled_jobs": 0,
-    "average_wait_time_seconds": 0.093869,
-    "median_wait_time_seconds": 0.08209,
-    "throughput_jobs_per_second": 8.528785,
-    "submitted_jobs_per_second": 8.528785,
-    "total_printer_occupancy_seconds": 0.782,
+    "average_wait_time_seconds": 0.092583,
+    "median_wait_time_seconds": 0.075773,
+    "throughput_jobs_per_second": 8.830022,
+    "completed_jobs_per_second": 8.830022,
+    "total_printer_occupancy_seconds": 0.781,
     "printer_occupancy_seconds": {
-      "P1": 0.313,
-      "P2": 0.469
+      "P1": 0.328,
+      "P2": 0.453
     },
     "failed_jobs": 0
   }

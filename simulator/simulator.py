@@ -196,12 +196,12 @@ class Simulator:
                     median(wait_times), 6
                 ) if wait_times else 0,
                 "throughput_jobs_per_second": (
-                    round(len(completed) / elapsed, 6)
+                    round(len(jobs) / elapsed, 6)
                     if elapsed > 0
                     else 0.0
                 ),
-                "submitted_jobs_per_second": (
-                    round(len(jobs) / elapsed, 6)
+                "completed_jobs_per_second": (
+                    round(len(completed) / elapsed, 6)
                     if elapsed > 0
                     else 0.0
                 ),

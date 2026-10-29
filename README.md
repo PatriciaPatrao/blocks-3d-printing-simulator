@@ -129,8 +129,8 @@ The JSON report contains:
 - `wait_time`: start time minus creation time, in seconds.
 - `run_time`: finish time minus start time, in seconds.
 - Average and median waiting times for jobs that started, including failed jobs.
-- Completed-job throughput: completed jobs divided by total simulation elapsed time.
-- Submitted-job rate: all submitted jobs divided by total simulation elapsed time.
+- Throughput: total submitted jobs divided by total simulation elapsed time, as specified by the challenge.
+- Completed-job rate: completed jobs divided by total simulation elapsed time, measuring effective output.
 - Total printer occupancy and occupancy per printer.
 
 `time_scale` changes simulated duration, not the reported time units. Execution and occupancy durations are measured in real elapsed seconds.
@@ -149,19 +149,37 @@ Tests cover model validation, priority ordering, FIFO behavior, cancellation, si
 
 ### Priority and FIFO
 
-The queue uses a heap ordered by `(priority, insertion_sequence, job_id)`. The insertion sequence ensures FIFO ordering among jobs with equal priority.
+Jobs are stored in a min-heap using (priority, insertion_sequence, job_id) as the ordering key. Lower numeric priority values are processed first. The insertion sequence preserves FIFO ordering for jobs with equal priority, without relying on job identifiers to determine their order.
+
+This approach provides efficient insertion and retrieval of the next eligible job. Duplicate job identifiers are rejected to prevent ambiguous job state.
 
 ### Concurrency
 
 Each printer has an asynchronous worker. Queue access and job claiming are protected by a lock so that a job cannot be claimed by multiple printers.
 
-### Cancellation
+### Cancellation and thread safety
 
-Cancellation is supported only while a job is queued. Running-job cancellation and persistent state are outside the current implementation.
+The simulator uses one asynchronous worker per printer. Workers claim jobs through the shared queue manager, which protects queue operations and job claiming with a threading.Lock.
 
-### Time scaling
+Job claiming and the transition from queued to running happen atomically. This prevents multiple workers from claiming the same job and keeps cancellation from succeeding after a job has started.
 
-The time scale makes simulations faster or slower without changing the report's time units. For example, `0.01` makes a nominal 30-second job take approximately 0.3 seconds to execute.
+### Cancellation and job lifecycle
+
+Queued jobs can be cancelled before execution. Cancellation is not supported for running jobs, and job state is kept in memory rather than persisted between CLI invocations.
+
+Jobs can finish as completed or failed. If a worker raises an exception, the affected job is marked as failed, the report is preserved, and the CLI returns a non-zero exit status. Jobs that have not started remain queued.
+
+### Time scaling and reporting
+
+The time_scale parameter controls the actual duration of simulated printing. It allows longer workloads to be tested quickly without changing the reported time units.
+
+The report includes UTC timestamps, per-job waiting and execution times, job-state counts, waiting-time statistics, throughput and printer occupancy. Execution and occupancy durations are measured using real elapsed time, so results may vary slightly between runs.
+
+### Trade-offs and scope
+
+The implementation prioritises a small, testable simulation core over additional infrastructure. It uses in-memory state, a heap-based priority queue and asynchronous workers rather than introducing a database, distributed queue or web service.
+
+This keeps the project straightforward to install and run while demonstrating priority scheduling, concurrent execution, cancellation, error handling and structured reporting. Persistence, preemption, running-job cancellation and an interactive API remain outside the current scope.
 
 ## Limitations
 

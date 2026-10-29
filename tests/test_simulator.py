@@ -238,7 +238,8 @@ def test_metrics_include_failed_jobs_that_started():
     assert job_report["run_time"] == 3
     assert metrics["average_wait_time_seconds"] == 5
     assert metrics["median_wait_time_seconds"] == 5
-    assert metrics["throughput_jobs_per_second"] == 0
+    assert metrics["throughput_jobs_per_second"] == 0.1
+    assert metrics["completed_jobs_per_second"] == 0.0
     assert metrics["total_printer_occupancy_seconds"] == 3
     assert metrics["failed_jobs"] == 1
     assert metrics["completed_jobs"] == 0
@@ -263,7 +264,7 @@ async def test_metrics_with_multiple_printers():
     )
     assert all(value > 0 for value in occupancy.values())
     assert metrics["throughput_jobs_per_second"] > 0
-    assert metrics["submitted_jobs_per_second"] >= (
+    assert metrics["throughput_jobs_per_second"] >= (
         metrics["throughput_jobs_per_second"]
     )
 
