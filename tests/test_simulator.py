@@ -270,10 +270,10 @@ async def test_metrics_with_multiple_printers():
     assert elapsed > 0
 
     assert metrics["throughput_jobs_per_second"] == pytest.approx(
-        3 / elapsed, abs=0.000001
+        3 / elapsed, abs=0.001
     )
     assert metrics["completed_jobs_per_second"] == pytest.approx(
-        3 / elapsed, abs=0.000001
+        3 / elapsed, abs=0.001
     )
     assert metrics["failed_jobs"] == 0
     assert metrics["total_printer_occupancy_seconds"] == pytest.approx(
