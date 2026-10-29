@@ -83,12 +83,23 @@ Run the sample workload:
 
 ```bash
 python -m simulator.cli \
+  --input sample_input.json \
+  --printers 2 \
+  --output report.json
+```
+The simulator runs the workload using two printers and saves the full report, including job states and metrics, to report.json.
+
+Add a job to the workload for the current invocation:
+
+```bash
+python -m simulator.cli \
   --add-job J005 \
   --material PLA \
   --est-time 30 \
   --priority 1 \
   --output report.json
 ```
+The new job is added to the jobs loaded from the input file. The simulation then runs unless --list is used without --run.
 
 ## Options:
 
@@ -173,7 +184,7 @@ Jobs can finish as completed or failed. If a worker raises an exception, the aff
 
 The time_scale parameter controls the actual duration of simulated printing. It allows longer workloads to be tested quickly without changing the reported time units.
 
-The report includes UTC timestamps, per-job waiting and execution times, job-state counts, waiting-time statistics, throughput and printer occupancy. Execution and occupancy durations are measured using real elapsed time, so results may vary slightly between runs.
+The report includes UTC timestamps, per-job waiting and execution times, job-state counts, waiting-time statistics, throughput, completed-job rate and printer occupancy. Execution and occupancy durations are measured using real elapsed time, so results may vary slightly between runs.
 
 ### Trade-offs and scope
 
