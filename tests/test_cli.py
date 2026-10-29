@@ -1,9 +1,14 @@
+import pytest
 import asyncio
 from argparse import Namespace
 import json
+import csv
+
 
 from simulator import cli
+
 from simulator.cli import load_jobs
+from simulator.cli import write_report
 from simulator.models import Job
 from simulator.simulator import Simulator
 
@@ -12,7 +17,6 @@ def test_report_uses_iso_timestamps():
     simulator = Simulator(printer_count=1, time_scale=0.001)
     simulator.add_job(Job("J1", "PLA", 0.01))
 
-    import asyncio
     report = asyncio.run(simulator.run())
 
     job = report["jobs"][0]
@@ -104,10 +108,6 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
 
 
 def test_write_report_as_csv(tmp_path):
-    import csv
-
-    from simulator.cli import write_report
-
     output_path = tmp_path / "reports" / "report.csv"
     report = {
         "jobs": [
@@ -139,3 +139,13 @@ def test_write_report_as_csv(tmp_path):
     assert rows[0]["status"] == "completed"
     assert rows[0]["wait_time"] == "1.0"
     assert rows[0]["run_time"] == "10.0"
+
+
+def test_write_report_rejects_unsupported_extension(tmp_path):
+    output_path = tmp_path / "report.txt"
+    report = {"jobs": [], "metrics": {}}
+
+    with pytest.raises(ValueError, match="Unsupported report format"):
+        write_report(report, output_path)
+
+    assert not output_path.exists()

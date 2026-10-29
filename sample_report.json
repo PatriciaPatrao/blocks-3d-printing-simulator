@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-10-29T09:26:24.225444+00:00",
+  "simulation_elapsed_seconds": 0.469,
+  "jobs": [
+    {
+      "id": "J001",
+      "material": "PLA",
+      "est_time": 30,
+      "priority": 2,
+      "status": "completed",
+      "created_at": "2026-10-29T09:26:23.758247+00:00",
+      "started_at": "2026-10-29T09:26:23.915533+00:00",
+      "finished_at": "2026-10-29T09:26:24.225444+00:00",
+      "wait_time": 0.157286,
+      "run_time": 0.309911
+    },
+    {
+      "id": "J002",
+      "material": "ABS",
+      "est_time": 20,
+      "priority": 1,
+      "status": "completed",
+      "created_at": "2026-10-29T09:26:23.758247+00:00",
+      "started_at": "2026-10-29T09:26:23.759154+00:00",
+      "finished_at": "2026-10-29T09:26:23.961860+00:00",
+      "wait_time": 0.000907,
+      "run_time": 0.202706
+    },
+    {
+      "id": "J003",
+      "material": "PETG",
+      "est_time": 15,
+      "priority": 1,
+      "status": "completed",
+      "created_at": "2026-10-29T09:26:23.758247+00:00",
+      "started_at": "2026-10-29T09:26:23.759154+00:00",
+      "finished_at": "2026-10-29T09:26:23.915533+00:00",
+      "wait_time": 0.000907,
+      "run_time": 0.156379
+    },
+    {
+      "id": "J004",
+      "material": "PLA",
+      "est_time": 10,
+      "priority": 3,
+      "status": "completed",
+      "created_at": "2026-10-29T09:26:23.758247+00:00",
+      "started_at": "2026-10-29T09:26:23.961860+00:00",
+      "finished_at": "2026-10-29T09:26:24.070514+00:00",
+      "wait_time": 0.203613,
+      "run_time": 0.108654
+    }
+  ],
+  "metrics": {
+    "total_jobs": 4,
+    "completed_jobs": 4,
+    "queued_jobs": 0,
+    "cancelled_jobs": 0,
+    "average_wait_time_seconds": 0.090679,
+    "median_wait_time_seconds": 0.079097,
+    "throughput_jobs_per_second": 8.528785,
+    "submitted_jobs_per_second": 8.528785,
+    "total_printer_occupancy_seconds": 0.782,
+    "printer_occupancy_seconds": {
+      "P1": 0.313,
+      "P2": 0.469
+    },
+    "failed_jobs": 0
+  }
+}

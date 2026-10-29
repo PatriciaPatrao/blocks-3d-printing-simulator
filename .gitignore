@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 report.json
+report.csv
 report_cancel.json
 .env
-report.json
-report.csv

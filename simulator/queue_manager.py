@@ -51,16 +51,7 @@ class QueueManager:
 
     def get_next_job(self) -> Job | None:
         """Return the highest-priority queued job, or None if empty."""
-        with self._lock:
-            while self._heap:
-                _, _, job_id = heapq.heappop(self._heap)
-                job = self._jobs[job_id]
-
-                # Cancelled jobs remain in the heap until they reach the top.
-                if job.status == JobStatus.QUEUED:
-                    return job
-
-            return None
+        return self.claim_next_job()
 
     def claim_next_job(self) -> Job | None:
         """Atomically claim the next queued job for a printer."""

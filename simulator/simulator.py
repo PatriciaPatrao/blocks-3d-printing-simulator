@@ -47,6 +47,7 @@ class Simulator:
         self._simulation_elapsed = 0.0
         self.last_report: dict | None = None
         self._stop_claiming = False
+        self._has_run = False
 
     def add_job(self, job: Job) -> None:
         self.queue.enqueue(job)
@@ -96,7 +97,12 @@ class Simulator:
             job = None
 
     async def run(self) -> dict:
+        if self._has_run:
+            raise RuntimeError("A simulation instance can only run once.")
+
+        self._has_run = True
         self._stop_claiming = False
+
         started = time.monotonic()
 
         # Assign one initial job to each printer before workers start.
@@ -189,9 +195,16 @@ class Simulator:
                 "median_wait_time_seconds": round(
                     median(wait_times), 6
                 ) if wait_times else 0,
-                "throughput_jobs_per_second": round(
-                    len(completed) / elapsed, 6
-                ) if elapsed > 0 else 0,
+                "throughput_jobs_per_second": (
+                    round(len(completed) / elapsed, 6)
+                    if elapsed > 0
+                    else 0.0
+                ),
+                "submitted_jobs_per_second": (
+                    round(len(jobs) / elapsed, 6)
+                    if elapsed > 0
+                    else 0.0
+                ),
                 "total_printer_occupancy_seconds": round(
                     total_occupancy, 6
                 ),

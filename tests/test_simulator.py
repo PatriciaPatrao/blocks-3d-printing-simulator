@@ -262,5 +262,21 @@ async def test_metrics_with_multiple_printers():
         sum(occupancy.values()), abs=0.00001
     )
     assert all(value > 0 for value in occupancy.values())
-    print("Printer occupancy:", occupancy)
     assert metrics["throughput_jobs_per_second"] > 0
+    assert metrics["submitted_jobs_per_second"] >= (
+        metrics["throughput_jobs_per_second"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_simulation_can_only_run_once():
+    simulator = Simulator(printer_count=1, time_scale=0.01)
+    simulator.add_job(Job("J1", "PLA", 0.01))
+
+    await simulator.run()
+
+    with pytest.raises(
+        RuntimeError,
+        match="A simulation instance can only run once",
+    ):
+        await simulator.run()

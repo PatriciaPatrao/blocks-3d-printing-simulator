@@ -1,4 +1,3 @@
-
 import argparse
 import asyncio
 import json
@@ -44,10 +43,18 @@ def load_jobs(input_path: Path) -> list[Job]:
     return jobs
 
 
-def write_report(report: dict, output_path: Path) -> None:
+def write_report(report, output_path):
+    output_path = Path(output_path)
+    suffix = output_path.suffix.lower()
+
+    if suffix not in {".json", ".csv"}:
+        raise ValueError(
+            "Unsupported report format. Use a .json or .csv extension."
+        )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if output_path.suffix.lower() == ".csv":
+    if suffix == ".csv":
         fieldnames = [
             "id",
             "material",
@@ -70,12 +77,13 @@ def write_report(report: dict, output_path: Path) -> None:
                 extrasaction="ignore",
             )
             writer.writeheader()
-            writer.writerows(report.get("jobs", []))
-    else:
-        output_path.write_text(
-            json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+            writer.writerows(report["jobs"])
+
+        return
+
+    with output_path.open("w", encoding="utf-8") as json_file:
+        json.dump(report, json_file, indent=2)
+        json_file.write("\n")
 
 
 async def run_cli(args: argparse.Namespace) -> int:

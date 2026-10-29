@@ -123,8 +123,9 @@ The JSON report contains:
 - UTC timestamps in ISO 8601 format.
 - `wait_time`: start time minus creation time, in seconds.
 - `run_time`: finish time minus start time, in seconds.
-- Average and median waiting times for completed jobs.
-- Throughput in completed jobs per second.
+- Average and median waiting times for jobs that started, including failed jobs.
+- Completed-job throughput: completed jobs divided by total simulation elapsed time.
+- Submitted-job rate: all submitted jobs divided by total simulation elapsed time.
 - Total printer occupancy and occupancy per printer.
 
 `time_scale` changes simulated duration, not the reported time units. Execution and occupancy durations are measured in real elapsed seconds.
