@@ -259,6 +259,23 @@ async def test_metrics_with_multiple_printers():
 
     assert metrics["completed_jobs"] == 3
     assert metrics["failed_jobs"] == 0
+
+    occupancy = metrics["printer_occupancy_seconds"]
+    assert metrics["total_printer_occupancy_seconds"] == pytest.approx(
+        sum(occupancy.values()), abs=0.00001
+    )
+    assert all(value > 0 for value in occupancy.values())
+
+    elapsed = report["simulation_elapsed_seconds"]
+    assert elapsed > 0
+
+    assert metrics["throughput_jobs_per_second"] == pytest.approx(
+        3 / elapsed, abs=0.000001
+    )
+    assert metrics["completed_jobs_per_second"] == pytest.approx(
+        3 / elapsed, abs=0.000001
+    )
+    assert metrics["failed_jobs"] == 0
     assert metrics["total_printer_occupancy_seconds"] == pytest.approx(
         sum(occupancy.values()), abs=0.00001
     )
@@ -267,6 +284,36 @@ async def test_metrics_with_multiple_printers():
     assert metrics["throughput_jobs_per_second"] >= (
         metrics["throughput_jobs_per_second"]
     )
+
+
+@pytest.mark.asyncio
+async def test_second_printer_starts_queued_job_when_first_is_busy():
+    simulator = Simulator(printer_count=2, time_scale=0.01)
+
+    long_job = Job("J1", "PLA", 10, priority=1)
+    short_job = Job("J3", "ABS", 3, priority=1)
+    waiting_job = Job("J2", "PETG", 1, priority=2)
+
+    simulator.add_job(long_job)
+    simulator.add_job(short_job)
+    simulator.add_job(waiting_job)
+
+    report = await simulator.run()
+
+    assert report["metrics"]["completed_jobs"] == 3
+    assert all(
+        job["status"] == JobStatus.COMPLETED.value
+        for job in report["jobs"]
+    )
+
+    assert long_job.started_at is not None
+    assert long_job.finished_at is not None
+    assert short_job.started_at is not None
+    assert short_job.finished_at is not None
+    assert waiting_job.started_at is not None
+
+    assert waiting_job.started_at >= short_job.finished_at
+    assert waiting_job.started_at < long_job.finished_at
 
 
 @pytest.mark.asyncio
