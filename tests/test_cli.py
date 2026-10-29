@@ -95,6 +95,10 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
         cancel=[],
         list=False,
         run=False,
+        add_job=None,
+        material=None,
+        est_time=None,
+        priority=0,
     )
 
     exit_code = asyncio.run(cli.run_cli(args))
@@ -149,3 +153,34 @@ def test_write_report_rejects_unsupported_extension(tmp_path):
         write_report(report, output_path)
 
     assert not output_path.exists()
+
+
+def test_cli_adds_job_to_simulation(tmp_path):
+    input_path = tmp_path / "jobs.json"
+    input_path.write_text("[]", encoding="utf-8")
+    output_path = tmp_path / "report.json"
+
+    args = Namespace(
+        input=input_path,
+        printers=1,
+        time_scale=0.001,
+        output=output_path,
+        cancel=[],
+        list=False,
+        run=False,
+        add_job="J005",
+        material="PLA",
+        est_time=0.01,
+        priority=1,
+    )
+
+    exit_code = asyncio.run(cli.run_cli(args))
+
+    assert exit_code == 0
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert len(report["jobs"]) == 1
+    assert report["jobs"][0]["id"] == "J005"
+    assert report["jobs"][0]["material"] == "PLA"
+    assert report["jobs"][0]["priority"] == 1
+    assert report["jobs"][0]["status"] == "completed"

@@ -96,6 +96,21 @@ async def run_cli(args: argparse.Namespace) -> int:
     for job in jobs:
         simulator.add_job(job)
 
+    if args.add_job is not None:
+        if not args.material or args.est_time is None:
+            raise ValueError(
+                "--add-job requires --material and --est-time."
+            )
+
+        simulator.add_job(
+            Job(
+                id=args.add_job,
+                material=args.material,
+                est_time=args.est_time,
+                priority=args.priority,
+            )
+        )
+
     for job_id in args.cancel:
         if not simulator.cancel_job(job_id):
             print(
@@ -147,8 +162,8 @@ def main() -> int:
         description="Simulate a 3D printing job queue."
     )
     parser.add_argument(
-        "--input", type=Path, default=Path("sample_jobs.json"),
-        help="Input JSON file (default: sample_jobs.json)",
+        "--input", type=Path, default=Path("sample_input.json"),
+        help="Input JSON file (default: sample_input.json)",
     )
     parser.add_argument(
         "--printers", type=int, default=2,
@@ -174,7 +189,26 @@ def main() -> int:
         "--run", action="store_true",
         help="Run the simulation after listing jobs",
     )
-
+    parser.add_argument(
+        "--add-job",
+        metavar="JOB_ID",
+        help="Add a job to the current simulation.",
+    )
+    parser.add_argument(
+        "--material",
+        help="Material for the job being added.",
+    )
+    parser.add_argument(
+        "--est-time",
+        type=float,
+        help="Estimated printing time in seconds.",
+    )
+    parser.add_argument(
+        "--priority",
+        type=int,
+        default=0,
+        help="Priority for the added job (default: 0; lower is more urgent).",
+    )
     args = parser.parse_args()
 
     try:

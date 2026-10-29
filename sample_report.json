@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-29T09:26:24.225444+00:00",
+  "generated_at": "2026-10-29T09:36:26.476551+00:00",
   "simulation_elapsed_seconds": 0.469,
   "jobs": [
     {
@@ -8,11 +8,11 @@
       "est_time": 30,
       "priority": 2,
       "status": "completed",
-      "created_at": "2026-10-29T09:26:23.758247+00:00",
-      "started_at": "2026-10-29T09:26:23.915533+00:00",
-      "finished_at": "2026-10-29T09:26:24.225444+00:00",
-      "wait_time": 0.157286,
-      "run_time": 0.309911
+      "created_at": "2026-10-29T09:36:26.002592+00:00",
+      "started_at": "2026-10-29T09:36:26.166772+00:00",
+      "finished_at": "2026-10-29T09:36:26.476551+00:00",
+      "wait_time": 0.16418,
+      "run_time": 0.309779
     },
     {
       "id": "J002",
@@ -20,11 +20,11 @@
       "est_time": 20,
       "priority": 1,
       "status": "completed",
-      "created_at": "2026-10-29T09:26:23.758247+00:00",
-      "started_at": "2026-10-29T09:26:23.759154+00:00",
-      "finished_at": "2026-10-29T09:26:23.961860+00:00",
-      "wait_time": 0.000907,
-      "run_time": 0.202706
+      "created_at": "2026-10-29T09:36:26.002592+00:00",
+      "started_at": "2026-10-29T09:36:26.002592+00:00",
+      "finished_at": "2026-10-29T09:36:26.213890+00:00",
+      "wait_time": 0.0,
+      "run_time": 0.211298
     },
     {
       "id": "J003",
@@ -32,11 +32,11 @@
       "est_time": 15,
       "priority": 1,
       "status": "completed",
-      "created_at": "2026-10-29T09:26:23.758247+00:00",
-      "started_at": "2026-10-29T09:26:23.759154+00:00",
-      "finished_at": "2026-10-29T09:26:23.915533+00:00",
-      "wait_time": 0.000907,
-      "run_time": 0.156379
+      "created_at": "2026-10-29T09:36:26.002592+00:00",
+      "started_at": "2026-10-29T09:36:26.002592+00:00",
+      "finished_at": "2026-10-29T09:36:26.166772+00:00",
+      "wait_time": 0.0,
+      "run_time": 0.16418
     },
     {
       "id": "J004",
@@ -44,11 +44,11 @@
       "est_time": 10,
       "priority": 3,
       "status": "completed",
-      "created_at": "2026-10-29T09:26:23.758247+00:00",
-      "started_at": "2026-10-29T09:26:23.961860+00:00",
-      "finished_at": "2026-10-29T09:26:24.070514+00:00",
-      "wait_time": 0.203613,
-      "run_time": 0.108654
+      "created_at": "2026-10-29T09:36:26.002592+00:00",
+      "started_at": "2026-10-29T09:36:26.213890+00:00",
+      "finished_at": "2026-10-29T09:36:26.322513+00:00",
+      "wait_time": 0.211298,
+      "run_time": 0.108623
     }
   ],
   "metrics": {
@@ -56,8 +56,8 @@
     "completed_jobs": 4,
     "queued_jobs": 0,
     "cancelled_jobs": 0,
-    "average_wait_time_seconds": 0.090679,
-    "median_wait_time_seconds": 0.079097,
+    "average_wait_time_seconds": 0.093869,
+    "median_wait_time_seconds": 0.08209,
     "throughput_jobs_per_second": 8.528785,
     "submitted_jobs_per_second": 8.528785,
     "total_printer_occupancy_seconds": 0.782,

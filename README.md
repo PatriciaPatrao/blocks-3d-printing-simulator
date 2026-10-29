@@ -83,21 +83,26 @@ Run the sample workload:
 
 ```bash
 python -m simulator.cli \
-  --input sample_jobs.json \
-  --printers 2 \
-  --time-scale 0.01 \
+  --add-job J005 \
+  --material PLA \
+  --est-time 30 \
+  --priority 1 \
   --output report.json
 ```
 
-Options:
+## Options:
 
-- `--input`: input JSON path; defaults to `sample_jobs.json`.
+- `--input`: input JSON path; defaults to `sample_input.json`.
 - `--printers`: number of printers; defaults to `2`.
 - `--time-scale`: multiplier applied to estimated job duration; defaults to `0.01`.
 - `--output`: report output path. Use `.json` for the full report with metrics or `.csv` for per-job data. If omitted, the JSON report is printed to the terminal.
+- `--add-job JOB_ID`: add a job to the current simulation.
+- `--material MATERIAL`: material for the job being added; required with `--add-job`.
+- `--est-time SECONDS`: estimated printing time in seconds; required with `--add-job`.
+- `--priority PRIORITY`: priority for the added job; defaults to `0`. Lower numbers represent higher priority.
+- `--cancel JOB_ID`: cancel a queued job before simulation. This option can be repeated.
 - `--list`: list loaded jobs before simulation.
 - `--run`: run the simulation after listing jobs.
-- `--cancel JOB_ID`: cancel a queued job before simulation. This option can be repeated.
 
 List jobs without running the simulation:
 
