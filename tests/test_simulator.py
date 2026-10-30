@@ -357,3 +357,92 @@ def test_report_shows_aging_disabled_by_default():
 
     assert report["configuration"]["aging_enabled"] is False
     assert report["configuration"]["aging_interval_seconds"] is None
+
+
+def test_running_job_can_be_cancelled_and_printer_continues(
+    monkeypatch,
+):
+    async def scenario():
+        simulator = Simulator(printer_count=1, time_scale=1.0)
+
+        first_job = Job(
+            id="job-1",
+            material="PLA",
+            est_time=10,
+        )
+        second_job = Job(
+            id="job-2",
+            material="PETG",
+            est_time=1,
+        )
+
+        simulator.add_job(first_job)
+        simulator.add_job(second_job)
+
+        first_job_started = asyncio.Event()
+
+        async def controlled_sleep(delay):
+            if delay == 10:
+                first_job_started.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(
+            "simulator.simulator.asyncio.sleep",
+            controlled_sleep,
+        )
+
+        run_task = asyncio.create_task(simulator.run())
+
+        await first_job_started.wait()
+
+        assert first_job.status == JobStatus.RUNNING
+        assert simulator.cancel_job("job-1") is True
+
+        report = await run_task
+
+        assert first_job.status == JobStatus.CANCELLED
+        assert first_job.finished_at is not None
+
+        assert second_job.status == JobStatus.COMPLETED
+        assert second_job.finished_at is not None
+
+        assert simulator.printers[0].current_job_id is None
+        assert simulator._running_cancellations == {}
+
+        # Validate cancellation reporting and partial execution metrics.
+        assert report["metrics"]["cancelled_jobs"] == 1
+        assert report["metrics"]["completed_jobs"] == 1
+        assert report["metrics"]["total_jobs"] == 2
+
+        cancelled_job_report = next(
+            item for item in report["jobs"]
+            if item["id"] == "job-1"
+        )
+
+        assert cancelled_job_report["status"] == "cancelled"
+        assert cancelled_job_report["run_time"] is not None
+        assert cancelled_job_report["finished_at"] is not None
+
+        assert (
+            report["metrics"]["total_printer_occupancy_seconds"]
+            >= cancelled_job_report["run_time"]
+        )
+
+    asyncio.run(scenario())
+
+
+def test_completed_job_cannot_be_cancelled():
+    simulator = Simulator(printer_count=1, time_scale=0.001)
+
+    job = Job(
+        id="job-1",
+        material="PLA",
+        est_time=0.01,
+    )
+
+    simulator.add_job(job)
+
+    asyncio.run(simulator.run())
+
+    assert job.status == JobStatus.COMPLETED
+    assert simulator.cancel_job("job-1") is False

@@ -50,13 +50,29 @@ class Simulator:
         self.last_report: dict | None = None
         self._stop_claiming = False
         self._has_run = False
+        self._running_cancellations: dict[str, asyncio.Event] = {}
 
     def add_job(self, job: Job) -> None:
         self.queue.enqueue(job)
         self._jobs[job.id] = job
 
     def cancel_job(self, job_id: str) -> bool:
-        return self.queue.cancel(job_id)
+        """Request cancellation of a queued or running job."""
+        if self.queue.cancel(job_id):
+            return True
+
+        job = self._jobs.get(job_id)
+
+        if job is None or job.status != JobStatus.RUNNING:
+            return False
+
+        cancel_event = self._running_cancellations.get(job_id)
+
+        if cancel_event is None or cancel_event.is_set():
+            return False
+
+        cancel_event.set()
+        return True
 
     def list_jobs(self) -> list[Job]:
         return list(self._jobs.values())
@@ -79,23 +95,55 @@ class Simulator:
             if job is None:
                 return
 
+            # Register cancellation for every claimed job.
+            cancel_event = asyncio.Event()
+            self._running_cancellations[job.id] = cancel_event
+
             printer.current_job_id = job.id
             job_started = time.monotonic()
 
+            sleep_task = asyncio.create_task(
+                asyncio.sleep(job.est_time * self.time_scale)
+            )
+            cancel_task = asyncio.create_task(cancel_event.wait())
+
             try:
-                await asyncio.sleep(job.est_time * self.time_scale)
+                done, _ = await asyncio.wait(
+                    {sleep_task, cancel_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                # If both finish simultaneously, completion takes precedence.
+                if sleep_task in done:
+                    await sleep_task
+                    job.status = JobStatus.COMPLETED
+                else:
+                    job.status = JobStatus.CANCELLED
+
+                job.finished_at = time.time()
+
             except Exception:
                 self._stop_claiming = True
                 job.status = JobStatus.FAILED
                 job.finished_at = time.time()
                 raise
-            else:
-                job.status = JobStatus.COMPLETED
-                job.finished_at = time.time()
+
             finally:
+                for task in (sleep_task, cancel_task):
+                    if not task.done():
+                        task.cancel()
+
+                await asyncio.gather(
+                    sleep_task,
+                    cancel_task,
+                    return_exceptions=True,
+                )
+
+                self._running_cancellations.pop(job.id, None)
                 printer.busy_time += time.monotonic() - job_started
                 printer.current_job_id = None
 
+            # Continue with the next queued job, even after cancellation.
             job = None
 
     async def run(self) -> dict:

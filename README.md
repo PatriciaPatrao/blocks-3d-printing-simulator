@@ -1,7 +1,7 @@
 
 # 3D Printing Queue Simulator
 
-A Python-based simulator for scheduling 3D printing jobs across multiple printers. It supports priority-based scheduling, FIFO ordering for equal priorities, queued-job cancellation, asynchronous execution and JSON and CSV reporting.
+A Python-based simulator for scheduling 3D printing jobs across multiple printers. It supports priority-based scheduling, FIFO ordering for equal priorities, queued and running-job cancellation, asynchronous execution and JSON and CSV reporting.
 
 ## Features
 
@@ -10,7 +10,8 @@ A Python-based simulator for scheduling 3D printing jobs across multiple printer
 - Configurable number of printers.
 - Asynchronous workers, one per printer.
 - Thread-safe queue operations.
-- Cancellation of jobs that have not started.
+- Cancellation of queued and running jobs through the Python API.
+- CLI support for cancelling queued jobs before simulation.
 - JSON reports with job states, timestamps and execution metrics.
 - CSV reports with per-job states, timestamps, wait times and run times.
 - Configurable simulation time scale.
@@ -210,9 +211,15 @@ Job claiming and the transition from queued to running happen atomically. This p
 
 ### Cancellation and job lifecycle
 
-Queued jobs can be cancelled before execution. Cancellation is not supported for running jobs, and job state is kept in memory rather than persisted between CLI invocations.
+Queued jobs can be cancelled before execution through the queue manager or the CLI.
 
-Jobs can finish as completed or failed. If a worker raises an exception, the affected job is marked as failed, the report is preserved, and the CLI returns a non-zero exit status. Jobs that have not started remain queued.
+Running jobs can also be cancelled through the `Simulator.cancel_job(job_id)` Python API. The cancellation request interrupts the simulated printing wait without terminating the printer worker. The printer is then available to process the next queued job.
+
+The method returns `True` when a cancellation request is accepted and `False` when the job does not exist or cannot be cancelled, including jobs that have already started and received a cancellation request, or have already finished.
+
+Cancelled jobs retain their start and finish timestamps when applicable. Their partial execution time and printer occupancy are included in the report.
+
+Job state is kept in memory rather than persisted between CLI invocations.
 
 ### Time scaling and reporting
 
@@ -224,11 +231,11 @@ The report includes UTC timestamps, per-job waiting and execution times, job-sta
 
 The implementation prioritises a small, testable simulation core over additional infrastructure. It uses in-memory state, a heap-based priority queue and asynchronous workers rather than introducing a database, distributed queue or web service.
 
-This keeps the project straightforward to install and run while demonstrating priority scheduling, concurrent execution, cancellation, error handling and structured reporting. Persistence, preemption, running-job cancellation and an interactive API remain outside the current scope.
+This keeps the project straightforward to install and run while demonstrating priority scheduling, concurrent execution, cancellation, error handling and structured reporting. Persistence, preemption and an interactive API remain outside the current scope. Running-job cancellation is available through the internal Python API, but not through the CLI.
 
 ## Limitations
 
 - Job state is held in memory and is reset for each CLI invocation.
 - The CLI is not an interactive service.
-- Running-job cancellation and preemption are not implemented.
-- Printer failures are represented when a worker raises an exception. The affected job is marked as `failed`, the report is preserved, and the CLI exits with a non-zero status. Jobs not yet started remain queued.
+- Running-job cancellation is available through the Python API but not through the CLI.
+- Preemption is not implemented.
