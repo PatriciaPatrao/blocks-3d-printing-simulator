@@ -328,3 +328,32 @@ async def test_simulation_can_only_run_once():
         match="A simulation instance can only run once",
     ):
         await simulator.run()
+
+
+def test_report_includes_aging_configuration_and_effective_priority():
+    simulator = Simulator(
+        printer_count=1,
+        aging_interval=60,
+    )
+    job = Job("J1", "PLA", 10, priority=3)
+    simulator.add_job(job)
+
+    job.status = JobStatus.RUNNING
+    job.started_at = job.created_at + 10
+    job.effective_priority_at_start = 2
+
+    report = simulator.generate_report()
+
+    assert report["configuration"]["aging_enabled"] is True
+    assert report["configuration"]["aging_interval_seconds"] == 60
+    assert report["jobs"][0]["priority"] == 3
+    assert report["jobs"][0]["effective_priority_at_start"] == 2
+
+
+def test_report_shows_aging_disabled_by_default():
+    simulator = Simulator(printer_count=1)
+
+    report = simulator.generate_report()
+
+    assert report["configuration"]["aging_enabled"] is False
+    assert report["configuration"]["aging_interval_seconds"] is None

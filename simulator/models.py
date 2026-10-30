@@ -24,6 +24,7 @@ class Job:
     started_at: float | None = None
     finished_at: float | None = None
     status: JobStatus = JobStatus.QUEUED
+    effective_priority_at_start: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not self.id.strip():

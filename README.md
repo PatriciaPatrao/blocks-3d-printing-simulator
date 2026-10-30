@@ -15,6 +15,8 @@ A Python-based simulator for scheduling 3D printing jobs across multiple printer
 - CSV reports with per-job states, timestamps, wait times and run times.
 - Configurable simulation time scale.
 - Automated tests using pytest and pytest-asyncio.
+- Optional Priority Aging to reduce starvation of lower-priority jobs.
+- Configurable aging interval, disabled by default.
 
 ## Requirements
 
@@ -111,6 +113,7 @@ The new job is added to the jobs loaded from the input file. The simulation then
 - `--material MATERIAL`: material for the job being added; required with `--add-job`.
 - `--est-time SECONDS`: estimated printing time in seconds; required with `--add-job`.
 - `--priority PRIORITY`: priority for the added job; defaults to `0`. Lower numbers represent higher priority.
+- `--aging-interval SECONDS`: enable Priority Aging, improving a queued job's effective priority by one level for each elapsed interval. Must be positive. Disabled by default.
 - `--cancel JOB_ID`: cancel a queued job before simulation. This option can be repeated.
 - `--list`: list loaded jobs before simulation.
 - `--run`: run the simulation after listing jobs.
@@ -119,6 +122,16 @@ List jobs without running the simulation:
 
 ```bash
 python -m simulator.cli --list
+```
+
+Enable Priority Aging with a 60-second interval:
+
+```bash
+python -m simulator.cli \
+  --input sample_input.json \
+  --printers 2 \
+  --aging-interval 60 \
+  --output report.json
 ```
 
 Cancel a job before simulation and save the report:
@@ -137,6 +150,9 @@ The JSON report contains:
 
 - Per-job status: `queued`, `running`, `completed`, `cancelled` or `failed`.
 - UTC timestamps in ISO 8601 format.
+- `configuration`: records whether Priority Aging is enabled and its configured interval.
+- `priority`: the job's original priority, which remains unchanged.
+- `effective_priority_at_start`: the effective priority when the job was claimed by a printer. This is `null` for jobs that have not started.
 - `wait_time`: start time minus creation time, in seconds.
 - `run_time`: finish time minus start time, in seconds.
 - Average and median waiting times for jobs that started, including failed jobs.
@@ -154,7 +170,7 @@ Run the test suite:
 python -m pytest -q
 ```
 
-Tests cover model validation, priority ordering, FIFO behavior, cancellation, simulator execution, report fields and JSON input validation.
+Tests cover model validation, priority ordering, FIFO behavior, Priority Aging, cancellation, simulator execution, report fields and JSON input validation.
 
 ## Design decisions
 
@@ -163,6 +179,24 @@ Tests cover model validation, priority ordering, FIFO behavior, cancellation, si
 Jobs are stored in a min-heap using (priority, insertion_sequence, job_id) as the ordering key. Lower numeric priority values are processed first. The insertion sequence preserves FIFO ordering for jobs with equal priority, without relying on job identifiers to determine their order.
 
 This approach provides efficient insertion and retrieval of the next eligible job. Duplicate job identifiers are rejected to prevent ambiguous job state.
+
+### Priority Aging
+
+Priority Aging is an optional scheduling mechanism designed to reduce starvation, where lower-priority jobs may otherwise wait indefinitely while higher-priority jobs continue to arrive.
+
+The effective priority is calculated as:
+
+`effective_priority = max(0, original_priority - floor(waiting_time / aging_interval))`
+
+Each elapsed aging interval improves the job's priority by one level. Priority values cannot become negative.
+
+The original priority is preserved. Aging only affects jobs that remain queued and does not change the priority of jobs that have already started.
+
+Because priority values change over time, the queue is rebuilt before each job claim when aging is enabled. The existing insertion sequence is preserved, maintaining FIFO ordering between jobs with equal effective priority.
+
+Queue waiting time for aging calculations uses a monotonic clock to avoid changes caused by system clock adjustments.
+
+The implementation uses an O(n) heap rebuild per claim when aging is enabled. This is a deliberate trade-off that keeps the scheduling logic simple and avoids background update mechanisms. When aging is disabled, the original heap-based scheduling behavior is preserved.
 
 ### Concurrency
 

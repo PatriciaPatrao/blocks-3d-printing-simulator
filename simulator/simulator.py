@@ -23,6 +23,7 @@ class Simulator:
         self,
         printer_count: int = 2,
         time_scale: float = 0.01,
+        aging_interval: float | None = None,
     ) -> None:
         if (
             isinstance(printer_count, bool)
@@ -38,7 +39,8 @@ class Simulator:
         ):
             raise ValueError("time_scale must be positive and finite.")
 
-        self.queue = QueueManager()
+        self.queue = QueueManager(aging_interval=aging_interval)
+        self.aging_interval = self.queue.aging_interval
         self.printers = [
             Printer(id=f"P{i + 1}") for i in range(printer_count)
         ]
@@ -158,12 +160,19 @@ class Simulator:
         return {
             "generated_at": iso_timestamp(time.time()),
             "simulation_elapsed_seconds": round(elapsed, 6),
+            "configuration": {
+                "aging_enabled": self.aging_interval is not None,
+                "aging_interval_seconds": self.aging_interval,
+            },
             "jobs": [
                 {
                     "id": job.id,
                     "material": job.material,
                     "est_time": job.est_time,
                     "priority": job.priority,
+                    "effective_priority_at_start": (
+                        job.effective_priority_at_start
+                    ),
                     "status": job.status.value,
                     "created_at": iso_timestamp(job.created_at),
                     "started_at": iso_timestamp(job.started_at),

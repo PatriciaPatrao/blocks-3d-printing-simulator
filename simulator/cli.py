@@ -60,6 +60,7 @@ def write_report(report, output_path):
             "material",
             "est_time",
             "priority",
+            "effective_priority_at_start",
             "status",
             "created_at",
             "started_at",
@@ -91,6 +92,7 @@ async def run_cli(args: argparse.Namespace) -> int:
     simulator = Simulator(
         printer_count=args.printers,
         time_scale=args.time_scale,
+        aging_interval=getattr(args, "aging_interval", None),
     )
 
     for job in jobs:
@@ -208,6 +210,15 @@ def main() -> int:
         type=int,
         default=0,
         help="Priority for the added job (default: 0; lower is more urgent).",
+    )
+    parser.add_argument(
+        "--aging-interval",
+        type=float,
+        default=None,
+        help=(
+            "Enable priority aging with one priority-level improvement "
+            "per interval in seconds (disabled by default)."
+        ),
     )
     args = parser.parse_args()
 

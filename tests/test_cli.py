@@ -70,7 +70,7 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
     }
 
     class FailingSimulator:
-        def __init__(self, printer_count, time_scale):
+        def __init__(self, printer_count, time_scale, aging_interval=None):
             self.last_report = expected_report
 
         def add_job(self, job):
@@ -184,3 +184,45 @@ def test_cli_adds_job_to_simulation(tmp_path):
     assert report["jobs"][0]["material"] == "PLA"
     assert report["jobs"][0]["priority"] == 1
     assert report["jobs"][0]["status"] == "completed"
+
+
+def test_cli_enables_priority_aging(tmp_path):
+    input_path = tmp_path / "jobs.json"
+    input_path.write_text(
+        json.dumps([
+            {
+                "id": "J1",
+                "material": "PLA",
+                "est_time": 0.01,
+                "priority": 3,
+            }
+        ]),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "report.json"
+
+    args = Namespace(
+        input=input_path,
+        printers=1,
+        time_scale=0.001,
+        aging_interval=60,
+        output=output_path,
+        cancel=[],
+        list=False,
+        run=False,
+        add_job=None,
+        material=None,
+        est_time=None,
+        priority=0,
+    )
+
+    exit_code = asyncio.run(cli.run_cli(args))
+
+    assert exit_code == 0
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert report["configuration"]["aging_enabled"] is True
+    assert report["configuration"]["aging_interval_seconds"] == 60
+    assert report["jobs"][0]["effective_priority_at_start"] == 3
