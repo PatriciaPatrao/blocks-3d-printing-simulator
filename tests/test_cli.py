@@ -14,6 +14,7 @@ from simulator.simulator import Simulator
 
 
 def test_report_uses_iso_timestamps():
+    """Test that the report uses ISO timestamps."""
     simulator = Simulator(printer_count=1, time_scale=0.001)
     simulator.add_job(Job("J1", "PLA", 0.01))
 
@@ -26,6 +27,7 @@ def test_report_uses_iso_timestamps():
 
 
 def test_load_jobs_from_json(tmp_path):
+    """Test that jobs can be loaded from a JSON file."""
     path = tmp_path / "jobs.json"
     path.write_text(
         json.dumps([
@@ -42,6 +44,7 @@ def test_load_jobs_from_json(tmp_path):
 
 
 def test_load_jobs_rejects_invalid_json_structure(tmp_path):
+    """Test that invalid JSON structure is rejected."""
     path = tmp_path / "jobs.json"
     path.write_text('{"unexpected": []}', encoding="utf-8")
 
@@ -54,6 +57,7 @@ def test_load_jobs_rejects_invalid_json_structure(tmp_path):
 
 
 def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
+    """Test that the CLI saves a report when the simulation fails."""
     input_path = tmp_path / "jobs.json"
     input_path.write_text(
         json.dumps([
@@ -70,7 +74,15 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
     }
 
     class FailingSimulator:
-        def __init__(self, printer_count, time_scale, aging_interval=None):
+        """A simulated simulator that fails."""
+        def __init__(
+            self,
+            printer_count,
+            time_scale,
+            aging_interval=None,
+            repository=None,
+            input_file=None,
+        ):
             self.last_report = expected_report
 
         def add_job(self, job):
@@ -112,6 +124,7 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
 
 
 def test_write_report_as_csv(tmp_path):
+    """Test that the report can be written as a CSV file."""
     output_path = tmp_path / "reports" / "report.csv"
     report = {
         "jobs": [
@@ -146,6 +159,7 @@ def test_write_report_as_csv(tmp_path):
 
 
 def test_write_report_rejects_unsupported_extension(tmp_path):
+    """Test that an error is raised when an unsupported extension is used."""
     output_path = tmp_path / "report.txt"
     report = {"jobs": [], "metrics": {}}
 
@@ -156,6 +170,7 @@ def test_write_report_rejects_unsupported_extension(tmp_path):
 
 
 def test_cli_adds_job_to_simulation(tmp_path):
+    """Test that a job can be added to the simulation."""
     input_path = tmp_path / "jobs.json"
     input_path.write_text("[]", encoding="utf-8")
     output_path = tmp_path / "report.json"
@@ -187,7 +202,10 @@ def test_cli_adds_job_to_simulation(tmp_path):
 
 
 def test_cli_enables_priority_aging(tmp_path):
+    """Test that priority aging is enabled."""
+    # Create a temporary input file.
     input_path = tmp_path / "jobs.json"
+    # Write the jobs to the input file.
     input_path.write_text(
         json.dumps([
             {

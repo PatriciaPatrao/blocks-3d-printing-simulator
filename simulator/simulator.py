@@ -1,11 +1,12 @@
-
 import asyncio
 import time
 from datetime import datetime, timezone
 from statistics import mean, median
+from dataclasses import replace
 
 from simulator.models import Job, JobStatus, Printer
 from simulator.queue_manager import QueueManager
+from simulator.repositories.job_repository import JobRepository
 
 
 def iso_timestamp(timestamp: float | None) -> str | None:
@@ -24,6 +25,8 @@ class Simulator:
         printer_count: int = 2,
         time_scale: float = 0.01,
         aging_interval: float | None = None,
+        repository: JobRepository | None = None,
+        input_file: str | None = None,
     ) -> None:
         if (
             isinstance(printer_count, bool)
@@ -51,14 +54,23 @@ class Simulator:
         self._stop_claiming = False
         self._has_run = False
         self._running_cancellations: dict[str, asyncio.Event] = {}
+        self.repository = repository
+        self.input_file = input_file
+        self.run_id: str | None = None
+        self._status_events: list[tuple[str, Job]] = []
+        self._job_queued_at: dict[str, float] = {}
+        self._job_started_at: dict[str, float] = {}
 
     def add_job(self, job: Job) -> None:
         self.queue.enqueue(job)
         self._jobs[job.id] = job
+        self._job_queued_at[job.id] = time.monotonic()
+        self._record_status(job)
 
     def cancel_job(self, job_id: str) -> bool:
         """Request cancellation of a queued or running job."""
         if self.queue.cancel(job_id):
+            self._record_status(self._jobs[job_id])
             return True
 
         job = self._jobs.get(job_id)
@@ -90,7 +102,7 @@ class Simulator:
                 return
 
             if job is None:
-                job = self.queue.claim_next_job()
+                job = self._claim_next_job()
 
             if job is None:
                 return
@@ -100,7 +112,7 @@ class Simulator:
             self._running_cancellations[job.id] = cancel_event
 
             printer.current_job_id = job.id
-            job_started = time.monotonic()
+            job_started = self._job_started_at[job.id]
 
             sleep_task = asyncio.create_task(
                 asyncio.sleep(job.est_time * self.time_scale)
@@ -139,25 +151,33 @@ class Simulator:
                     return_exceptions=True,
                 )
 
+                job.run_time_seconds = time.monotonic() - job_started
+                self._job_started_at.pop(job.id, None)
+
                 self._running_cancellations.pop(job.id, None)
                 printer.busy_time += time.monotonic() - job_started
                 printer.current_job_id = None
+                # Record the final status of the job.
+                self._record_status(job)
 
             # Continue with the next queued job, even after cancellation.
             job = None
 
     async def run(self) -> dict:
+        """Run the simulation."""
         if self._has_run:
             raise RuntimeError("A simulation instance can only run once.")
 
         self._has_run = True
         self._stop_claiming = False
+        # Start persisting the simulation state.
+        self._start_persistence()
 
         started = time.monotonic()
 
         # Assign one initial job to each printer before workers start.
         initial_jobs = [
-            self.queue.claim_next_job()
+            self._claim_next_job()
             for _ in self.printers
         ]
 
@@ -172,6 +192,7 @@ class Simulator:
             return_exceptions=True,
         )
 
+        # Generate the final report and persist the simulation state.
         self._simulation_elapsed = time.monotonic() - started
         self.last_report = self.generate_report()
 
@@ -180,12 +201,76 @@ class Simulator:
             if isinstance(result, Exception)
         ]
 
+        if self.repository is not None:
+            status = "failed" if errors else "completed"
+            error_message = (
+                f"{type(errors[0]).__name__}: {errors[0]}"
+                if errors else None
+            )
+
+            self.repository.finish_run(
+                run_id=self.run_id,
+                status=status,
+                elapsed_time=self._simulation_elapsed,
+                metrics=self.last_report["metrics"],
+                error_message=error_message,
+            )
+
         if errors:
             raise errors[0]
 
         return self.last_report
 
+    def _record_status(self, job: Job) -> None:
+        """Record a snapshot of a job's current state."""
+        if self.repository is None:
+            return
 
+        snapshot = replace(job)
+
+        if self.run_id is None:
+            self._status_events.append((job.id, snapshot))
+            return
+
+        self.repository.update_job(self.run_id, snapshot)
+
+    def _start_persistence(self) -> None:
+        """Create a run and persist all jobs and pre-run status changes."""
+        if self.repository is None:
+            return
+
+        self.run_id = self.repository.create_run(
+            printer_count=len(self.printers),
+            time_scale=self.time_scale,
+            aging_interval=self.aging_interval,
+            input_file=self.input_file,
+        )
+
+        persisted_jobs: set[str] = set()
+
+        for job_id, snapshot in self._status_events:
+            if job_id not in persisted_jobs:
+                self.repository.add_job(self.run_id, snapshot)
+                persisted_jobs.add(job_id)
+            else:
+                self.repository.update_job(self.run_id, snapshot)
+
+        self._status_events.clear()
+
+    def _claim_next_job(self) -> Job | None:
+        """Claim the next job from the queue."""
+        job = self.queue.claim_next_job()
+
+        if job is not None:
+            now = time.monotonic()
+            queued_at = self._job_queued_at.pop(job.id)
+
+            job.wait_time_seconds = now - queued_at
+            self._job_started_at[job.id] = now
+
+            self._record_status(job)
+
+        return job
 
     def generate_report(self) -> dict:
         jobs = list(self._jobs.values())
@@ -195,9 +280,9 @@ class Simulator:
         ]
 
         wait_times = [
-            job.started_at - job.created_at
+            job.wait_time_seconds
             for job in jobs
-            if job.started_at is not None
+            if job.wait_time_seconds is not None
         ]
 
         elapsed = self._simulation_elapsed
@@ -226,13 +311,12 @@ class Simulator:
                     "started_at": iso_timestamp(job.started_at),
                     "finished_at": iso_timestamp(job.finished_at),
                     "wait_time": (
-                        round(job.started_at - job.created_at, 6)
-                        if job.started_at is not None else None
+                        round(job.wait_time_seconds, 6)
+                        if job.wait_time_seconds is not None else None
                     ),
                     "run_time": (
-                        round(job.finished_at - job.started_at, 6)
-                        if job.finished_at is not None
-                        and job.started_at is not None else None
+                        round(job.run_time_seconds, 6)
+                        if job.run_time_seconds is not None else None
                     ),
                 }
                 for job in jobs

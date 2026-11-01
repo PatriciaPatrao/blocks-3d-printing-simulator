@@ -7,9 +7,12 @@ from pathlib import Path
 
 from simulator.models import Job
 from simulator.simulator import Simulator
+from simulator.database import Database
+from simulator.repositories.job_repository import JobRepository
 
 
 def load_jobs(input_path: Path) -> list[Job]:
+    """Load jobs from a JSON file."""
     try:
         data = json.loads(input_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -43,7 +46,8 @@ def load_jobs(input_path: Path) -> list[Job]:
     return jobs
 
 
-def write_report(report, output_path):
+def write_report(report: dict, output_path: Path) -> None:
+    """Write a simulation report to a JSON or CSV file."""
     output_path = Path(output_path)
     suffix = output_path.suffix.lower()
 
@@ -88,11 +92,23 @@ def write_report(report, output_path):
 
 
 async def run_cli(args: argparse.Namespace) -> int:
+    """Run the CLI and return the exit code."""
+    # Load the jobs from the input file.
     jobs = load_jobs(args.input)
+
+    # Create a database instance.
+    database = Database()
+
+    # Create a job repository instance.
+    repository = JobRepository(database)
+
+    # Create a simulator instance.
     simulator = Simulator(
         printer_count=args.printers,
         time_scale=args.time_scale,
         aging_interval=getattr(args, "aging_interval", None),
+        repository=repository,
+        input_file=args.input.name,
     )
 
     for job in jobs:
@@ -160,6 +176,8 @@ async def run_cli(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """Main entry point for the CLI."""
+    # Parse the command line arguments.
     parser = argparse.ArgumentParser(
         description="Simulate a 3D printing job queue."
     )

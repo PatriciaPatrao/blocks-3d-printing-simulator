@@ -23,6 +23,8 @@ class Job:
 
     started_at: float | None = None
     finished_at: float | None = None
+    wait_time_seconds: float | None = None
+    run_time_seconds: float | None = None
     status: JobStatus = JobStatus.QUEUED
     effective_priority_at_start: int | None = None
 

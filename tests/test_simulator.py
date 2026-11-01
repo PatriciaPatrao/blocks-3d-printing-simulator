@@ -4,6 +4,8 @@ import pytest
 
 from simulator.models import Job, JobStatus
 from simulator.simulator import Simulator
+from simulator.database import Database
+from simulator.repositories.job_repository import JobRepository
 
 
 @pytest.mark.asyncio
@@ -227,6 +229,9 @@ def test_metrics_include_failed_jobs_that_started():
     job.status = JobStatus.FAILED
     job.started_at = job.created_at + 5
     job.finished_at = job.created_at + 8
+    job.run_time_seconds = 3
+    job.wait_time_seconds = 5
+
     simulator._simulation_elapsed = 10
     simulator.printers[0].busy_time = 3
 
@@ -446,3 +451,135 @@ def test_completed_job_cannot_be_cancelled():
 
     assert job.status == JobStatus.COMPLETED
     assert simulator.cancel_job("job-1") is False
+
+
+@pytest.mark.asyncio
+async def test_simulator_persists_completed_run(tmp_path):
+    """Test that a completed simulation is persisted correctly."""
+    database = Database(tmp_path / "test_simulator.db")
+    repository = JobRepository(database)
+
+    simulator = Simulator(
+        printer_count=1,
+        time_scale=0.001,
+        repository=repository,
+        input_file="sample_input.json",
+    )
+
+    simulator.add_job(Job("J1", "PLA", 0.05))
+
+    report = await simulator.run()
+
+    assert simulator.run_id is not None
+
+    result = repository.get_run(simulator.run_id)
+
+    assert result is not None
+    assert result["run"]["status"] == "completed"
+    assert result["run"]["input_file"] == "sample_input.json"
+
+    assert len(result["jobs"]) == 1
+
+    persisted_job = result["jobs"][0]
+
+    assert persisted_job["job_id"] == "J1"
+    assert persisted_job["status"] == "completed"
+    assert persisted_job["wait_time_seconds"] >= 0
+    assert persisted_job["run_time_seconds"] > 0
+
+    history = repository.get_job_history(simulator.run_id, "J1")
+
+    assert [entry["status"] for entry in history] == [
+        "queued",
+        "running",
+        "completed",
+    ]
+
+    assert report["metrics"]["completed_jobs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_simulator_persists_failed_run(tmp_path, monkeypatch):
+    """Test that a failed simulation is persisted correctly."""
+    database = Database(tmp_path / "test_simulator.db")
+    repository = JobRepository(database)
+
+    simulator = Simulator(
+        printer_count=1,
+        time_scale=0.001,
+        repository=repository,
+    )
+
+    simulator.add_job(Job("J1", "PLA", 0.05))
+
+    original_sleep = asyncio.sleep
+
+    async def failing_sleep(delay):
+        await original_sleep(0.01)
+        raise RuntimeError("Simulated printer failure")
+
+    monkeypatch.setattr(asyncio, "sleep", failing_sleep)
+
+    with pytest.raises(RuntimeError, match="Simulated printer failure"):
+        await simulator.run()
+
+    assert simulator.run_id is not None
+
+    result = repository.get_run(simulator.run_id)
+
+    assert result is not None
+    assert result["run"]["status"] == "failed"
+    assert "RuntimeError: Simulated printer failure" in result["run"]["error_message"]
+
+    persisted_job = result["jobs"][0]
+
+    assert persisted_job["job_id"] == "J1"
+    assert persisted_job["status"] == "failed"
+    assert persisted_job["run_time_seconds"] > 0
+
+    history = repository.get_job_history(simulator.run_id, "J1")
+
+    assert [entry["status"] for entry in history] == [
+        "queued",
+        "running",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_simulator_persists_cancelled_job(tmp_path):
+    """Test that a job cancelled before execution is persisted correctly."""
+    database = Database(tmp_path / "test_simulator.db")
+    repository = JobRepository(database)
+
+    simulator = Simulator(
+        printer_count=1,
+        time_scale=0.001,
+        repository=repository,
+    )
+
+    job = Job("J1", "PLA", 0.05)
+    simulator.add_job(job)
+
+    assert simulator.cancel_job("J1") is True
+
+    await simulator.run()
+
+    assert simulator.run_id is not None
+
+    result = repository.get_run(simulator.run_id)
+
+    assert result is not None
+    assert result["run"]["status"] == "completed"
+
+    persisted_job = result["jobs"][0]
+
+    assert persisted_job["job_id"] == "J1"
+    assert persisted_job["status"] == "cancelled"
+
+    history = repository.get_job_history(simulator.run_id, "J1")
+
+    assert [entry["status"] for entry in history] == [
+        "queued",
+        "cancelled",
+    ]
