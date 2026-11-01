@@ -583,3 +583,184 @@ async def test_simulator_persists_cancelled_job(tmp_path):
         "queued",
         "cancelled",
     ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_during_worker_cleanup(
+    tmp_path,
+    monkeypatch,
+):
+    """Test that repeated cancellation does not interrupt worker cleanup."""
+    database = Database(tmp_path / "test_simulator.db")
+    repository = JobRepository(database)
+
+    simulator = Simulator(
+        printer_count=1,
+        time_scale=1.0,
+        repository=repository,
+    )
+
+    job = Job("J1", "PLA", 10)
+    simulator.add_job(job)
+
+    job_started = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+
+    async def blocking_sleep(delay):
+        job_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        "simulator.simulator.asyncio.sleep",
+        blocking_sleep,
+    )
+
+    original_gather = asyncio.gather
+    gather_calls = 0
+
+    def controlled_gather(*awaitables, **kwargs):
+        nonlocal gather_calls
+
+        if (
+            len(awaitables) == 1
+            and isinstance(awaitables[0], asyncio.Task)
+        ):
+            gather_calls += 1
+
+            if gather_calls == 2:
+                workers_finished = original_gather(
+                    *awaitables,
+                    **kwargs,
+                )
+
+                async def delayed_cleanup():
+                    result = await workers_finished
+                    cleanup_started.set()
+                    await release_cleanup.wait()
+                    return result
+
+                return asyncio.create_task(delayed_cleanup())
+
+        return original_gather(*awaitables, **kwargs)
+
+    monkeypatch.setattr(
+        "simulator.simulator.asyncio.gather",
+        controlled_gather,
+    )
+
+    run_task = asyncio.create_task(simulator.run())
+
+    await job_started.wait()
+
+    assert job.status == JobStatus.RUNNING
+
+    run_task.cancel()
+
+    await cleanup_started.wait()
+
+    # Cancel the simulation again while cleanup is still pending.
+    run_task.cancel()
+    release_cleanup.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    assert run_task.done()
+    assert job.status == JobStatus.FAILED
+    assert job.finished_at is not None
+
+    assert simulator.printers[0].current_job_id is None
+    assert simulator._running_cancellations == {}
+    assert simulator._job_started_at == {}
+
+    result = repository.get_run(simulator.run_id)
+
+    assert result is not None
+    assert result["run"]["status"] == "failed"
+
+    persisted_job = result["jobs"][0]
+
+    assert persisted_job["status"] == "failed"
+
+    history = repository.get_job_history(
+        simulator.run_id,
+        "J1",
+    )
+
+    assert [entry["status"] for entry in history] == [
+        "queued",
+        "running",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_running_status_persistence_failure_marks_job_failed(
+    tmp_path,
+    monkeypatch,
+):
+    """Test that a RUNNING persistence failure marks the job as failed."""
+    database = Database(tmp_path / "test_simulator.db")
+    repository = JobRepository(database)
+
+    simulator = Simulator(
+        printer_count=1,
+        time_scale=0.001,
+        repository=repository,
+    )
+
+    job = Job("J1", "PLA", 0.05)
+    simulator.add_job(job)
+
+    original_update_job = repository.update_job
+
+    def failing_update_job(run_id, job_snapshot):
+        if job_snapshot.status == JobStatus.RUNNING:
+            raise RuntimeError("Simulated persistence failure")
+
+        return original_update_job(run_id, job_snapshot)
+
+    monkeypatch.setattr(
+        repository,
+        "update_job",
+        failing_update_job,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Simulated persistence failure",
+    ):
+        await simulator.run()
+
+    assert job.status == JobStatus.FAILED
+    assert job.finished_at is not None
+    assert job.wait_time_seconds is not None
+    assert job.run_time_seconds == 0.0
+
+    assert simulator._job_started_at == {}
+    assert simulator._running_cancellations == {}
+
+    assert simulator.printers[0].current_job_id is None
+    assert simulator.queue.queued_count() == 0
+
+    result = repository.get_run(simulator.run_id)
+
+    assert result is not None
+    assert result["run"]["status"] == "failed"
+
+    persisted_job = result["jobs"][0]
+
+    assert persisted_job["status"] == "failed"
+    assert persisted_job["run_time_seconds"] == 0.0
+
+    history = repository.get_job_history(
+        simulator.run_id,
+        "J1",
+    )
+
+    # RUNNING was never persisted successfully.
+    assert [entry["status"] for entry in history] == [
+        "queued",
+        "failed",
+    ]

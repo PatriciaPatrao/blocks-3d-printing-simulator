@@ -273,3 +273,177 @@ def test_run_data_persists_after_reopening_database(tmp_path):
         "running",
         "completed",
     ]
+
+
+
+import pytest
+
+from simulator.models import Job, JobStatus
+from simulator.database import Database
+from simulator.repositories.job_repository import JobRepository
+
+
+def create_active_run(repository):
+    """Create an active simulation run."""
+    return repository.create_run(
+        printer_count=1,
+        time_scale=1.0,
+        aging_interval=None,
+    )
+
+
+def test_add_job_rejects_finished_run(tmp_path):
+    """Test that jobs cannot be added to a finished run."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    run_id = create_active_run(repository)
+    repository.finish_run(
+        run_id=run_id,
+        status="completed",
+        elapsed_time=1.0,
+        metrics={},
+    )
+
+    with pytest.raises(ValueError, match="Active simulation run"):
+        repository.add_job(
+            run_id,
+            Job("J1", "PLA", 10),
+        )
+
+
+def test_update_job_rejects_finished_run(tmp_path):
+    """Test that jobs cannot be updated after a run finishes."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    run_id = create_active_run(repository)
+    job = Job("J1", "PLA", 10)
+    repository.add_job(run_id, job)
+
+    repository.finish_run(
+        run_id=run_id,
+        status="completed",
+        elapsed_time=1.0,
+        metrics={},
+    )
+
+    job.status = JobStatus.RUNNING
+
+    with pytest.raises(ValueError, match="Active simulation run"):
+        repository.update_job(run_id, job)
+
+
+def test_add_job_rejects_nonexistent_run(tmp_path):
+    """Test that jobs cannot be added to a nonexistent run."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    with pytest.raises(ValueError, match="Active simulation run"):
+        repository.add_job(
+            "nonexistent-run",
+            Job("J1", "PLA", 10),
+        )
+
+
+
+@pytest.mark.parametrize(
+    ("initial_status", "new_status"),
+    [
+        (JobStatus.QUEUED, JobStatus.COMPLETED),
+        (JobStatus.RUNNING, JobStatus.QUEUED),
+        (JobStatus.COMPLETED, JobStatus.RUNNING),
+        (JobStatus.CANCELLED, JobStatus.COMPLETED),
+        (JobStatus.FAILED, JobStatus.QUEUED),
+    ],
+)
+def test_update_job_rejects_invalid_status_transitions(
+    tmp_path,
+    initial_status,
+    new_status,
+):
+    """Test that invalid job status transitions are rejected."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    run_id = create_active_run(repository)
+    job = Job("J1", "PLA", 10)
+    job.status = initial_status
+
+    repository.add_job(run_id, job)
+
+    job.status = new_status
+
+    with pytest.raises(ValueError, match="Invalid job status transition"):
+        repository.update_job(run_id, job)
+
+    persisted = repository.get_run(run_id)["jobs"][0]
+
+    assert persisted["status"] == initial_status.value
+
+    history = repository.get_job_history(run_id, "J1")
+
+    assert [entry["status"] for entry in history] == [
+        initial_status.value,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("initial_status", "new_status"),
+    [
+        (JobStatus.QUEUED, JobStatus.RUNNING),
+        (JobStatus.QUEUED, JobStatus.CANCELLED),
+        (JobStatus.QUEUED, JobStatus.FAILED),
+        (JobStatus.RUNNING, JobStatus.COMPLETED),
+        (JobStatus.RUNNING, JobStatus.CANCELLED),
+        (JobStatus.RUNNING, JobStatus.FAILED),
+    ],
+)
+def test_update_job_accepts_valid_status_transitions(
+    tmp_path,
+    initial_status,
+    new_status,
+):
+    """Test that valid job status transitions are accepted."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    run_id = create_active_run(repository)
+    job = Job("J1", "PLA", 10)
+    job.status = initial_status
+
+    repository.add_job(run_id, job)
+
+    job.status = new_status
+    repository.update_job(run_id, job)
+
+    stored_run = repository.get_run(run_id)
+    stored_job = next(
+        item for item in stored_run["jobs"]
+        if item["job_id"] == job.id
+    )
+
+    assert stored_job["status"] == new_status.value
+
+
+def test_update_job_allows_updates_without_status_change(tmp_path):
+    """Test that job details can be updated without a status change."""
+    database = Database(tmp_path / "test.db")
+    repository = JobRepository(database)
+
+    run_id = create_active_run(repository)
+    job = Job("J1", "PLA", 10)
+    repository.add_job(run_id, job)
+
+    job.priority = 5
+    repository.update_job(run_id, job)
+
+    persisted = repository.get_run(run_id)["jobs"][0]
+
+    assert persisted["priority"] == 5
+
+    history = repository.get_job_history(run_id, "J1")
+
+    assert [entry["status"] for entry in history] == [
+        "queued",
+    ]

@@ -53,6 +53,34 @@ class Job:
         ):
             raise ValueError("Created_at must be a finite timestamp.")
 
+        if not isinstance(self.status, JobStatus):
+            raise ValueError("Invalid job status.")
+
+        for name in ("started_at", "finished_at"):
+            value = getattr(self, name)
+
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ValueError(
+                    f"{name} must be a finite timestamp or None."
+                )
+
+        for name in ("wait_time_seconds", "run_time_seconds"):
+            value = getattr(self, name)
+
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value < 0
+            ):
+                raise ValueError(
+                    f"{name} must be non-negative and finite or None."
+                )
+
 
 @dataclass
 class Printer:

@@ -1,8 +1,9 @@
+
 import asyncio
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from statistics import mean, median
-from dataclasses import replace
 
 from simulator.models import Job, JobStatus, Printer
 from simulator.queue_manager import QueueManager
@@ -62,6 +63,12 @@ class Simulator:
         self._job_started_at: dict[str, float] = {}
 
     def add_job(self, job: Job) -> None:
+        """Add a job before the simulation starts."""
+        if self._has_run:
+            raise RuntimeError(
+                "Cannot add jobs after the simulation has started."
+            )
+
         self.queue.enqueue(job)
         self._jobs[job.id] = job
         self._job_queued_at[job.id] = time.monotonic()
@@ -89,20 +96,13 @@ class Simulator:
     def list_jobs(self) -> list[Job]:
         return list(self._jobs.values())
 
-
-    async def _printer_worker(
-        self,
-        printer: Printer,
-        initial_job: Job | None = None,
-    ) -> None:
-        job = initial_job
-
+    async def _printer_worker(self, printer: Printer) -> None:
+        """Process queued jobs assigned to a printer."""
         while True:
             if self._stop_claiming:
                 return
 
-            if job is None:
-                job = self._claim_next_job()
+            job = self._claim_next_job()
 
             if job is None:
                 return
@@ -113,6 +113,7 @@ class Simulator:
 
             printer.current_job_id = job.id
             job_started = self._job_started_at[job.id]
+            worker_error: BaseException | None = None
 
             sleep_task = asyncio.create_task(
                 asyncio.sleep(job.est_time * self.time_scale)
@@ -134,7 +135,15 @@ class Simulator:
 
                 job.finished_at = time.time()
 
-            except Exception:
+            except asyncio.CancelledError as error:
+                worker_error = error
+                self._stop_claiming = True
+                job.status = JobStatus.FAILED
+                job.finished_at = time.time()
+                raise
+
+            except Exception as error:
+                worker_error = error
                 self._stop_claiming = True
                 job.status = JobStatus.FAILED
                 job.finished_at = time.time()
@@ -145,23 +154,76 @@ class Simulator:
                     if not task.done():
                         task.cancel()
 
-                await asyncio.gather(
-                    sleep_task,
-                    cancel_task,
-                    return_exceptions=True,
+                try:
+                    await asyncio.gather(
+                        sleep_task,
+                        cancel_task,
+                        return_exceptions=True,
+                    )
+                finally:
+                    run_time = time.monotonic() - job_started
+
+                    job.run_time_seconds = run_time
+                    self._job_started_at.pop(job.id, None)
+
+                    self._running_cancellations.pop(job.id, None)
+                    printer.busy_time += run_time
+                    printer.current_job_id = None
+
+                    # Record the final status without masking the original error.
+                    try:
+                        self._record_status(job)
+                    except Exception as persistence_error:
+                        self._stop_claiming = True
+
+                        if worker_error is None:
+                            raise
+
+                        worker_error.add_note(
+                            "Failed to persist the final job status: "
+                            f"{persistence_error}"
+                        )
+
+    def _fail_interrupted_jobs(self) -> list[Exception]:
+        """Mark jobs left running after an external worker cancellation."""
+        persistence_errors: list[Exception] = []
+
+        for job in self._jobs.values():
+            if job.status != JobStatus.RUNNING:
+                continue
+
+            job.status = JobStatus.FAILED
+            job.finished_at = time.time()
+
+            job_started = self._job_started_at.pop(job.id, None)
+
+            if job_started is not None:
+                run_time = time.monotonic() - job_started
+
+                active_printer = next(
+                    (
+                        printer
+                        for printer in self.printers
+                        if printer.current_job_id == job.id
+                    ),
+                    None,
                 )
 
-                job.run_time_seconds = time.monotonic() - job_started
-                self._job_started_at.pop(job.id, None)
+                if active_printer is not None:
+                    job.run_time_seconds = run_time
+                    active_printer.busy_time += run_time
+                    active_printer.current_job_id = None
+                else:
+                    job.run_time_seconds = 0.0
 
-                self._running_cancellations.pop(job.id, None)
-                printer.busy_time += time.monotonic() - job_started
-                printer.current_job_id = None
-                # Record the final status of the job.
+            self._running_cancellations.pop(job.id, None)
+
+            try:
                 self._record_status(job)
+            except Exception as error:
+                persistence_errors.append(error)
 
-            # Continue with the next queued job, even after cancellation.
-            job = None
+        return persistence_errors
 
     async def run(self) -> dict:
         """Run the simulation."""
@@ -170,51 +232,119 @@ class Simulator:
 
         self._has_run = True
         self._stop_claiming = False
-        # Start persisting the simulation state.
-        self._start_persistence()
 
         started = time.monotonic()
 
-        # Assign one initial job to each printer before workers start.
-        initial_jobs = [
-            self._claim_next_job()
-            for _ in self.printers
+        # Start persisting the simulation state.
+        try:
+            self._start_persistence()
+
+        except Exception as error:
+            self._simulation_elapsed = time.monotonic() - started
+            self.last_report = self.generate_report()
+
+            if self.repository is not None and self.run_id is not None:
+                try:
+                    self.repository.finish_run(
+                        run_id=self.run_id,
+                        status="failed",
+                        elapsed_time=self._simulation_elapsed,
+                        metrics=self.last_report["metrics"],
+                        error_message=f"{type(error).__name__}: {error}",
+                    )
+                except Exception as persistence_error:
+                    error.add_note(
+                        "Failed to persist the simulation failure status: "
+                        f"{persistence_error}"
+                    )
+
+            raise
+
+        # Create one worker per printer.
+        worker_tasks = [
+            asyncio.create_task(self._printer_worker(printer))
+            for printer in self.printers
         ]
 
-        results = await asyncio.gather(
-            *(
-                self._printer_worker(printer, initial_job)
-                for printer, initial_job in zip(
-                    self.printers,
-                    initial_jobs,
-                )
-            ),
-            return_exceptions=True,
-        )
+        run_cancelled: asyncio.CancelledError | None = None
+
+        try:
+            results = await asyncio.gather(
+                *worker_tasks,
+                return_exceptions=True,
+            )
+
+        except asyncio.CancelledError as error:
+            # Stop claiming jobs and wait for worker cleanup.
+            run_cancelled = error
+            self._stop_claiming = True
+
+            cleanup_task = asyncio.gather(
+                *worker_tasks,
+                return_exceptions=True,
+            )
+
+            # Keep waiting even if the simulation is cancelled again.
+            while not cleanup_task.done():
+                try:
+                    await asyncio.shield(cleanup_task)
+                except asyncio.CancelledError:
+                    continue
+
+            results = cleanup_task.result()
+
+        errors = [
+            result
+            for result in results
+            if isinstance(result, BaseException)
+        ]
+
+        # Handle workers cancelled before they could clean up their jobs.
+        if (
+            run_cancelled is not None
+            or any(
+                isinstance(error, asyncio.CancelledError)
+                for error in errors
+            )
+        ):
+            self._stop_claiming = True
+            errors.extend(self._fail_interrupted_jobs())
+
+        if run_cancelled is not None:
+            errors.insert(0, run_cancelled)
 
         # Generate the final report and persist the simulation state.
         self._simulation_elapsed = time.monotonic() - started
         self.last_report = self.generate_report()
 
-        errors = [
-            result for result in results
-            if isinstance(result, Exception)
-        ]
-
         if self.repository is not None:
             status = "failed" if errors else "completed"
-            error_message = (
-                f"{type(errors[0]).__name__}: {errors[0]}"
-                if errors else None
-            )
 
-            self.repository.finish_run(
-                run_id=self.run_id,
-                status=status,
-                elapsed_time=self._simulation_elapsed,
-                metrics=self.last_report["metrics"],
-                error_message=error_message,
-            )
+            if run_cancelled is not None:
+                error_message = "Simulation task was cancelled."
+            elif errors:
+                error_message = (
+                    f"{type(errors[0]).__name__}: {errors[0]}"
+                )
+            else:
+                error_message = None
+
+            try:
+                self.repository.finish_run(
+                    run_id=self.run_id,
+                    status=status,
+                    elapsed_time=self._simulation_elapsed,
+                    metrics=self.last_report["metrics"],
+                    error_message=error_message,
+                )
+            except Exception as persistence_error:
+                if not errors:
+                    raise
+
+                errors[0].add_note(
+                    "Failed to persist the final simulation state: "
+                    f"{persistence_error}"
+                )
 
         if errors:
             raise errors[0]
@@ -258,22 +388,45 @@ class Simulator:
         self._status_events.clear()
 
     def _claim_next_job(self) -> Job | None:
-        """Claim the next job from the queue."""
+        """Claim the next queued job from the queue."""
         job = self.queue.claim_next_job()
 
-        if job is not None:
-            now = time.monotonic()
-            queued_at = self._job_queued_at.pop(job.id)
+        if job is None:
+            return None
 
-            job.wait_time_seconds = now - queued_at
-            self._job_started_at[job.id] = now
+        now = time.monotonic()
+        queued_at = self._job_queued_at.pop(job.id)
 
+        job.wait_time_seconds = now - queued_at
+        self._job_started_at[job.id] = now
+
+        try:
             self._record_status(job)
+
+        except Exception as error:
+            self._stop_claiming = True
+
+            job.status = JobStatus.FAILED
+            job.finished_at = time.time()
+            job.run_time_seconds = 0.0
+
+            self._job_started_at.pop(job.id, None)
+
+            try:
+                self._record_status(job)
+            except Exception as persistence_error:
+                error.add_note(
+                    "Failed to persist the job failure status: "
+                    f"{persistence_error}"
+                )
+
+            raise
 
         return job
 
     def generate_report(self) -> dict:
         jobs = list(self._jobs.values())
+
         completed = [
             job for job in jobs
             if job.status == JobStatus.COMPLETED
@@ -286,6 +439,7 @@ class Simulator:
         ]
 
         elapsed = self._simulation_elapsed
+
         total_occupancy = sum(
             printer.busy_time for printer in self.printers
         )

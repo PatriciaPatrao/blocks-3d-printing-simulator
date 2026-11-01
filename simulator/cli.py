@@ -1,14 +1,14 @@
 import argparse
 import asyncio
-import json
 import csv
+import json
 import sys
 from pathlib import Path
 
-from simulator.models import Job
-from simulator.simulator import Simulator
 from simulator.database import Database
+from simulator.models import Job
 from simulator.repositories.job_repository import JobRepository
+from simulator.simulator import Simulator
 
 
 def load_jobs(input_path: Path) -> list[Job]:
@@ -125,8 +125,17 @@ async def run_cli(args: argparse.Namespace) -> int:
                 id=args.add_job,
                 material=args.material,
                 est_time=args.est_time,
-                priority=args.priority,
+                priority=args.priority if args.priority is not None else 0,
             )
+        )
+    elif (
+        args.material is not None
+        or args.est_time is not None
+        or args.priority is not None
+    ):
+        raise ValueError(
+            "--material, --est-time and --priority "
+            "can only be used with --add-job."
         )
 
     for job_id in args.cancel:
@@ -172,7 +181,6 @@ async def run_cli(args: argparse.Namespace) -> int:
         return 1
 
     return 0
-
 
 
 def main() -> int:
@@ -226,7 +234,7 @@ def main() -> int:
     parser.add_argument(
         "--priority",
         type=int,
-        default=0,
+        default=None,
         help="Priority for the added job (default: 0; lower is more urgent).",
     )
     parser.add_argument(

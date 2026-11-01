@@ -1,14 +1,12 @@
-import pytest
 import asyncio
-from argparse import Namespace
-import json
 import csv
+import json
+from argparse import Namespace
 
+import pytest
 
 from simulator import cli
-
-from simulator.cli import load_jobs
-from simulator.cli import write_report
+from simulator.cli import load_jobs, write_report
 from simulator.models import Job
 from simulator.simulator import Simulator
 
@@ -48,12 +46,8 @@ def test_load_jobs_rejects_invalid_json_structure(tmp_path):
     path = tmp_path / "jobs.json"
     path.write_text('{"unexpected": []}', encoding="utf-8")
 
-    try:
+    with pytest.raises(ValueError, match="JSON list"):
         load_jobs(path)
-    except ValueError as exc:
-        assert "JSON list" in str(exc)
-    else:
-        raise AssertionError("Expected invalid input to be rejected")
 
 
 def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
@@ -110,7 +104,7 @@ def test_cli_saves_report_when_simulation_fails(tmp_path, monkeypatch, capsys):
         add_job=None,
         material=None,
         est_time=None,
-        priority=0,
+        priority=None,
     )
 
     exit_code = asyncio.run(cli.run_cli(args))
@@ -203,9 +197,8 @@ def test_cli_adds_job_to_simulation(tmp_path):
 
 def test_cli_enables_priority_aging(tmp_path):
     """Test that priority aging is enabled."""
-    # Create a temporary input file.
     input_path = tmp_path / "jobs.json"
-    # Write the jobs to the input file.
+
     input_path.write_text(
         json.dumps([
             {
@@ -232,7 +225,7 @@ def test_cli_enables_priority_aging(tmp_path):
         add_job=None,
         material=None,
         est_time=None,
-        priority=0,
+        priority=None,
     )
 
     exit_code = asyncio.run(cli.run_cli(args))
@@ -244,3 +237,60 @@ def test_cli_enables_priority_aging(tmp_path):
     assert report["configuration"]["aging_enabled"] is True
     assert report["configuration"]["aging_interval_seconds"] == 60
     assert report["jobs"][0]["effective_priority_at_start"] == 3
+
+
+def test_cli_rejects_job_options_without_add_job(tmp_path):
+    """Test that job options require --add-job."""
+    input_path = tmp_path / "jobs.json"
+    input_path.write_text("[]", encoding="utf-8")
+
+    args = Namespace(
+        input=input_path,
+        printers=1,
+        time_scale=0.001,
+        output=None,
+        cancel=[],
+        list=False,
+        run=False,
+        add_job=None,
+        material=None,
+        est_time=None,
+        priority=1,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="can only be used with --add-job",
+    ):
+        asyncio.run(cli.run_cli(args))
+
+
+def test_cli_adds_job_with_default_priority(tmp_path):
+    """Test that an added job uses the default priority."""
+    input_path = tmp_path / "jobs.json"
+    input_path.write_text("[]", encoding="utf-8")
+
+    output_path = tmp_path / "report.json"
+
+    args = Namespace(
+        input=input_path,
+        printers=1,
+        time_scale=0.001,
+        output=output_path,
+        cancel=[],
+        list=False,
+        run=False,
+        add_job="J006",
+        material="PLA",
+        est_time=0.01,
+        priority=None,
+    )
+
+    exit_code = asyncio.run(cli.run_cli(args))
+
+    assert exit_code == 0
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert report["jobs"][0]["id"] == "J006"
+    assert report["jobs"][0]["priority"] == 0

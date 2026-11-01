@@ -1,6 +1,6 @@
 
 import sqlite3
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
@@ -38,11 +38,17 @@ class Database:
 
     def initialize(self) -> None:
         """Create the database schema if it does not exist."""
-        with closing(self.connect()) as connection:
+        connection = self.connect()
+
+        try:
+            # WAL mode must be configured outside a transaction.
             connection.execute("PRAGMA journal_mode = WAL")
 
+            # Keep schema creation and migrations atomic.
             connection.executescript(
                 """
+                BEGIN IMMEDIATE;
+
                 CREATE TABLE IF NOT EXISTS simulation_runs (
                     id TEXT PRIMARY KEY,
                     started_at REAL NOT NULL,
@@ -119,10 +125,19 @@ class Database:
                     ON simulation_runs(started_at);
 
                 CREATE INDEX IF NOT EXISTS idx_job_history_lookup
-                    ON job_status_history(run_id, job_id, changed_at);
+                    ON job_status_history(run_id, job_id, id DESC);
                 """
             )
+
             self._migrate_schema(connection)
+            connection.commit()
+
+        except BaseException:
+            connection.rollback()
+            raise
+
+        finally:
+            connection.close()
 
     def _migrate_schema(
         self,
@@ -156,8 +171,13 @@ class Database:
         try:
             yield connection
             connection.commit()
-        except Exception:
-            connection.rollback()
+
+        except BaseException:
+            try:
+                connection.rollback()
+            except sqlite3.Error:
+                pass
             raise
+
         finally:
             connection.close()

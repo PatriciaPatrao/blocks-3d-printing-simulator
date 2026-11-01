@@ -37,7 +37,7 @@ class QueueManager:
         )
 
     def enqueue(self, job: Job) -> None:
-        """Add a job to the queue."""
+        """Add a queued job to the priority queue."""
         with self._lock:
             if job.id in self._jobs:
                 raise ValueError(f"Job ID already exists: {job.id}")
@@ -45,17 +45,20 @@ class QueueManager:
             if job.status != JobStatus.QUEUED:
                 raise ValueError("Only queued jobs can be enqueued.")
 
+            sequence = self._sequence
+
             heapq.heappush(
                 self._heap,
-                (job.priority, self._sequence, job.id),
+                (job.priority, sequence, job.id),
             )
+
             self._jobs[job.id] = job
-            self._insertion_order[job.id] = self._sequence
+            self._insertion_order[job.id] = sequence
             self._enqueued_at[job.id] = time.monotonic()
             self._sequence += 1
 
     def cancel(self, job_id: str) -> bool:
-        """Cancel a queued job. Return False if it cannot be cancelled."""
+        """Cancel a queued job without removing it immediately from the heap."""
         with self._lock:
             job = self._jobs.get(job_id)
 
@@ -64,10 +67,15 @@ class QueueManager:
 
             job.status = JobStatus.CANCELLED
             job.finished_at = time.time()
+
             return True
 
     def get_next_job(self) -> Job | None:
-        """Return the highest-priority queued job, or None if empty."""
+        """Claim and return the next queued job.
+
+        This method changes the job status to RUNNING.
+        Use list_jobs() for a read-only inspection of queued jobs.
+        """
         return self.claim_next_job()
 
     def _effective_priority(
@@ -80,6 +88,7 @@ class QueueManager:
             return job.priority
 
         waiting_time = current_time - self._enqueued_at[job.id]
+
         priority_improvement = math.floor(
             waiting_time / self.aging_interval
         )
@@ -101,14 +110,17 @@ class QueueManager:
                     for job in self._jobs.values()
                     if job.status == JobStatus.QUEUED
                 ]
+
                 heapq.heapify(self._heap)
 
             while self._heap:
                 effective_priority, _, job_id = heapq.heappop(
                     self._heap
                 )
+
                 job = self._jobs[job_id]
 
+                # Skip jobs that were cancelled after being enqueued.
                 if job.status != JobStatus.QUEUED:
                     continue
 
@@ -118,6 +130,7 @@ class QueueManager:
                 job.effective_priority_at_start = effective_priority
                 job.status = JobStatus.RUNNING
                 job.started_at = time.time()
+
                 return job
 
             return None

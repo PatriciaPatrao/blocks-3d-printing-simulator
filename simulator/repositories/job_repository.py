@@ -1,8 +1,10 @@
 import json
+import math
 import time
 import uuid
 
 from contextlib import closing
+
 from simulator.database import Database
 from simulator.models import Job, JobStatus
 
@@ -10,9 +12,24 @@ from simulator.models import Job, JobStatus
 class JobRepository:
     """Persist simulation runs and their associated jobs."""
 
+    ALLOWED_TRANSITIONS = {
+        JobStatus.QUEUED: {
+            JobStatus.RUNNING,
+            JobStatus.CANCELLED,
+            JobStatus.FAILED,
+        },
+        JobStatus.RUNNING: {
+            JobStatus.COMPLETED,
+            JobStatus.CANCELLED,
+            JobStatus.FAILED,
+        },
+        JobStatus.COMPLETED: set(),
+        JobStatus.CANCELLED: set(),
+        JobStatus.FAILED: set(),
+    }
+
     def __init__(self, database: Database) -> None:
         self.database = database
-
 
     @staticmethod
     def _get_status_timestamp(job: Job) -> float:
@@ -32,6 +49,42 @@ class JobRepository:
             if job.finished_at is not None
             else time.time()
         )
+
+    @staticmethod
+    def _ensure_active_run(connection, run_id: str) -> None:
+        """Ensure that the simulation run exists and is still active."""
+        row = connection.execute(
+            """
+            SELECT status
+            FROM simulation_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+
+        if row is None or row["status"] != "running":
+            raise ValueError(
+                f"Active simulation run not found: {run_id}"
+            )
+
+    @classmethod
+    def _validate_transition(
+        cls,
+        current_status: JobStatus,
+        new_status: JobStatus,
+        job_id: str,
+    ) -> None:
+        """Validate a job status transition."""
+        if current_status == new_status:
+            return
+
+        allowed = cls.ALLOWED_TRANSITIONS[current_status]
+
+        if new_status not in allowed:
+            raise ValueError(
+                f"Invalid job status transition for {job_id}: "
+                f"{current_status.value} -> {new_status.value}"
+            )
 
     def create_run(
         self,
@@ -69,10 +122,11 @@ class JobRepository:
 
         return run_id
 
-
     def add_job(self, run_id: str, job: Job) -> None:
         """Persist a job and its initial status."""
         with self.database.transaction() as connection:
+            self._ensure_active_run(connection, run_id)
+
             connection.execute(
                 """
                 INSERT INTO jobs (
@@ -121,28 +175,36 @@ class JobRepository:
                     run_id,
                     job.id,
                     job.status.value,
-                    self._get_status_timestamp(job)
+                    self._get_status_timestamp(job),
                 ),
             )
 
     def update_job(self, run_id: str, job: Job) -> None:
         """Update a job and record status changes."""
         with self.database.transaction() as connection:
-            cursor = connection.execute(
+            self._ensure_active_run(connection, run_id)
+
+            existing = connection.execute(
                 """
                 SELECT status
                 FROM jobs
                 WHERE run_id = ? AND job_id = ?
                 """,
                 (run_id, job.id),
-            )
-
-            existing = cursor.fetchone()
+            ).fetchone()
 
             if existing is None:
                 raise ValueError(
                     f"Job not found in simulation run: {job.id}"
                 )
+
+            current_status = JobStatus(existing["status"])
+
+            self._validate_transition(
+                current_status,
+                job.status,
+                job.id,
+            )
 
             connection.execute(
                 """
@@ -175,7 +237,7 @@ class JobRepository:
                 ),
             )
 
-            if existing["status"] != job.status.value:
+            if current_status != job.status:
                 connection.execute(
                     """
                     INSERT INTO job_status_history (
@@ -190,46 +252,8 @@ class JobRepository:
                         run_id,
                         job.id,
                         job.status.value,
-                        self._get_status_timestamp(job)
+                        self._get_status_timestamp(job),
                     ),
-                )
-
-    def finish_run(
-        self,
-        run_id: str,
-        status: str,
-        elapsed_time: float,
-        metrics: dict,
-        error_message: str | None = None,
-    ) -> None:
-        """Mark a simulation run as finished."""
-        if status not in {"completed", "failed"}:
-            raise ValueError("Invalid simulation run status.")
-
-        with self.database.transaction() as connection:
-            cursor = connection.execute(
-                """
-                UPDATE simulation_runs
-                SET finished_at = ?,
-                    status = ?,
-                    elapsed_time = ?,
-                    metrics_json = ?,
-                    error_message = ?
-                WHERE id = ? AND status = 'running'
-                """,
-                (
-                    time.time(),
-                    status,
-                    elapsed_time,
-                    json.dumps(metrics),
-                    error_message,
-                    run_id,
-                ),
-            )
-
-            if cursor.rowcount != 1:
-                raise ValueError(
-                    f"Active simulation run not found: {run_id}"
                 )
 
     def get_run(self, run_id: str) -> dict | None:
@@ -262,19 +286,6 @@ class JobRepository:
                 "jobs": [dict(job) for job in jobs],
             }
 
-    def list_runs(self) -> list[dict]:
-        """List simulation runs, newest first."""
-        with closing(self.database.connect()) as connection:
-            rows = connection.execute(
-                """
-                SELECT *
-                FROM simulation_runs
-                ORDER BY started_at DESC
-                """
-            ).fetchall()
-
-            return [dict(row) for row in rows]
-
     def get_job_history(
         self,
         run_id: str,
@@ -294,3 +305,70 @@ class JobRepository:
 
             return [dict(row) for row in rows]
 
+    def finish_run(
+        self,
+        run_id: str,
+        status: str,
+        elapsed_time: float,
+        metrics: dict,
+        error_message: str | None = None,
+    ) -> None:
+        """Mark a simulation run as finished."""
+
+        if (
+            isinstance(elapsed_time, bool)
+            or not isinstance(elapsed_time, (int, float))
+            or not math.isfinite(elapsed_time)
+            or elapsed_time < 0
+        ):
+            raise ValueError(
+                "Elapsed time must be non-negative and finite."
+            )
+
+        if not isinstance(metrics, dict):
+            raise ValueError("Metrics must be a dictionary.")
+
+        if error_message is not None and not isinstance(error_message, str):
+            raise ValueError("Error message must be a string or None.")
+
+        if status not in {"completed", "failed"}:
+            raise ValueError("Invalid simulation run status.")
+
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE simulation_runs
+                SET finished_at = ?,
+                    status = ?,
+                    elapsed_time = ?,
+                    metrics_json = ?,
+                    error_message = ?
+                WHERE id = ? AND status = 'running'
+                """,
+                (
+                    time.time(),
+                    status,
+                    elapsed_time,
+                    json.dumps(metrics),
+                    error_message,
+                    run_id,
+                ),
+            )
+
+            if cursor.rowcount != 1:
+                raise ValueError(
+                    f"Active simulation run not found: {run_id}"
+                )
+
+    def list_runs(self) -> list[dict]:
+        """List simulation runs, newest first."""
+        with closing(self.database.connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM simulation_runs
+                ORDER BY started_at DESC
+                """
+            ).fetchall()
+
+            return [dict(row) for row in rows]

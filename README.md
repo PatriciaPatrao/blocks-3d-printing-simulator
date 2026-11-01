@@ -18,6 +18,9 @@ A Python-based simulator for scheduling 3D printing jobs across multiple printer
 - Automated tests using pytest and pytest-asyncio.
 - Optional Priority Aging to reduce starvation of lower-priority jobs.
 - Configurable aging interval, disabled by default.
+- SQLite persistence for simulation runs, jobs and job status history.
+- Automatic database schema creation and migration for backward compatibility.
+- Persistent simulation history across CLI invocations.
 
 ## Requirements
 
@@ -91,6 +94,7 @@ python -m simulator.cli \
   --output report.json
 ```
 The simulator runs the workload using two printers and saves the full report, including job states and metrics, to report.json.
+Simulation runs, job records and job status history are stored in a local SQLite database. The default database location is `data/simulator.db`.
 
 Add a job to the workload for the current invocation:
 
@@ -143,7 +147,7 @@ python -m simulator.cli \
   --output report_cancel.json
 ```
 
-Note: each CLI invocation loads a fresh set of jobs from the input file. Job states and cancellations are not persisted between invocations.
+Note: each CLI invocation loads a fresh set of jobs from the input file. Previous simulation runs, job records and status history remain available in the SQLite database, but job states are not automatically restored into a new simulation.
 
 ## Report
 
@@ -215,11 +219,11 @@ Queued jobs can be cancelled before execution through the queue manager or the C
 
 Running jobs can also be cancelled through the `Simulator.cancel_job(job_id)` Python API. The cancellation request interrupts the simulated printing wait without terminating the printer worker. The printer is then available to process the next queued job.
 
-The method returns `True` when a cancellation request is accepted and `False` when the job does not exist or cannot be cancelled, including jobs that have already started and received a cancellation request, or have already finished.
+The method returns `True` when a cancellation request is accepted and `False` when the job does not exist, is already being cancelled, or has already finished.
 
 Cancelled jobs retain their start and finish timestamps when applicable. Their partial execution time and printer occupancy are included in the report.
 
-Job state is kept in memory rather than persisted between CLI invocations.
+The active simulation state is managed in memory. Simulation runs, job records and status history are persisted in SQLite and remain available across CLI invocations. Each new CLI invocation loads a fresh set of jobs from the input file.
 
 ### Time scaling and reporting
 
@@ -229,13 +233,13 @@ The report includes UTC timestamps, per-job waiting and execution times, job-sta
 
 ### Trade-offs and scope
 
-The implementation prioritises a small, testable simulation core over additional infrastructure. It uses in-memory state, a heap-based priority queue and asynchronous workers rather than introducing a database, distributed queue or web service.
+The implementation prioritises a small, testable simulation core over additional infrastructure. It uses a heap-based priority queue and asynchronous workers for scheduling, with SQLite for persistent storage of simulation runs, jobs and job status history.
 
-This keeps the project straightforward to install and run while demonstrating priority scheduling, concurrent execution, cancellation, error handling and structured reporting. Persistence, preemption and an interactive API remain outside the current scope. Running-job cancellation is available through the internal Python API, but not through the CLI.
+This keeps the project straightforward to install and run while demonstrating priority scheduling, concurrent execution, cancellation, error handling, structured reporting and database persistence. Distributed queues, preemption and an interactive API remain outside the current scope. Running-job cancellation is available through the Python API, but not through the CLI.
 
 ## Limitations
 
-- Job state is held in memory and is reset for each CLI invocation.
+- Active simulation state is held in memory; historical simulation data is stored in SQLite.
 - The CLI is not an interactive service.
 - Running-job cancellation is available through the Python API but not through the CLI.
 - Preemption is not implemented.
